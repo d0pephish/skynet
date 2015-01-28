@@ -18,13 +18,15 @@ int random_choice = 0;
 struct branch {
   int score;
   struct word * item;
-};
+};//TO DO: add branch functionality
 struct word {
   char * value;
   int len;
-  struct branch ** next;
+  struct branch ** branches;
   int id;
-  int option_count;
+  int branch_count;
+  int max_branches;
+  int branch_list_index;
 };
 struct word_node {
   struct word * item;
@@ -32,6 +34,8 @@ struct word_node {
   struct word_node * right;
 };
 //PROTOTYPES
+void link_words(struct word *, struct word *);
+void prep_branch_list(struct word *);
 struct word_node * build_node(struct word *);
 struct word_node * insert_node(struct word *, struct word_node *);
 void print_tree(struct word_node *);
@@ -52,32 +56,50 @@ void parse(char * input) {
   char * in_ptr = input;
   char buff[250];
   char * buff_ptr = (char *) &buff;
-  
+  struct word * prev_word = NULL;
+  struct word * cur_word = NULL;
   int word_size = 0;
 
   memset(buff_ptr, 0, 250);
   while ((*in_ptr)!=0x00) {
+
     if (!valid_char((char) *in_ptr)) {
+  
       printf("invalid char! skipping...\n");
+  
     } else if(word_size >=249) {
+      
       printf("word too big! stopping...\n");
       break;
+    
     } else if (*in_ptr == ' ' || *in_ptr == '.') {
+      
       if (word_size>0) {
+        
         printf("%s\n",buff);
-        word_list = insert_node(build_word(buff, word_size),word_list);
+        cur_word = build_word(buff, word_size);
+        link_words(prev_word,cur_word);
+        word_list = insert_node(cur_word,word_list);
         //build_node(build_word(buff,word_size));
+      
       }
+      
       if (*in_ptr == '.') {
+      
         printf(".\n"); 
+      
       }
+      
       buff_ptr= (char *) &buff;
       memset(buff_ptr, 0,250);
       word_size = 0;
+    
     } else {
+      
       *buff_ptr = tolower(*in_ptr);
       buff_ptr++;
       word_size++;
+    
     }
     in_ptr++;
   }
@@ -90,7 +112,12 @@ int valid_char(char c) {
   if(c>0x7e) return 0;
   return 1;
 }
-
+void link_words(struct word * prev, struct word * cur) {
+  if(prev==NULL) return;
+  prep_branch_list(prev);
+  //TO DO: write build_branch function
+  //(*(prev->branches) + prev->branch_list_index) = build_branch(cur);
+}
 struct word * build_word(char * in, int len) {
   char * word_value = (char *) malloc(len+1);
   memcpy(word_value, in, len);
@@ -101,32 +128,34 @@ struct word * build_word(char * in, int len) {
   new_word->value = word_value;
 
   new_word->len = len;
+  new_word->max_branches = 0;
+  new_word->branch_list_index = 0;
   
   return new_word;
 }
-/*
-void prep_word_list(struct word_list * list) {
-  if (list->max == 0) {
 
-    struct word ** words = (struct word **) malloc(8);
-    memset(words,0,8);
+void prep_branch_list(struct word * cur_word) {
+  if (cur_word->max_branches == 0) { // could be more efficient if this is included in build_word
 
-    list->max = 8;
-    list->words = words;
+    struct branch ** branches = (struct branch **) malloc(8);
+    memset(branches,0,8);
+
+    cur_word->max_branches = 8;
+    cur_word->branches = branches;
   
-  } else if(list->index==list->max) {
+  } else if(cur_word->branch_list_index>cur_word->max_branches) {
 
-    struct word ** words = (struct word **) malloc(list->max * 2);
-    memset(words, 0, list->max *2);
-    memcpy(words, list->words,list->max*2);
+    struct branch ** branches = (struct branch **) malloc(cur_word->max_branches * 2);
+    memset(branches, 0, cur_word->max_branches *2);
+    memcpy(branches, cur_word->branches,cur_word->max_branches);
 
-    free(list->words);
+    free(cur_word->branches);
 
-    list->max = list->max * 2;
+    cur_word->max_branches = cur_word->max_branches * 2;
 
-    list->words = words;
+    cur_word->branches = branches;
   }
-}*/
+}
 struct word_node * build_node(struct word * item) {
   struct word_node * this_node = (struct word_node *) malloc(sizeof(struct word_node));
   memset(this_node, 0, sizeof(struct word_node));
