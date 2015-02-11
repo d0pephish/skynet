@@ -76,7 +76,7 @@ int main( int argc, char *argv[] )
 
 
 
-int sender(ssl_context *, char *, int);
+int sender(ssl_context *, unsigned char *, int);
 
 
 
@@ -97,38 +97,59 @@ static void my_debug( void *ctx, int level, const char *str )
     polarssl_fprintf( (FILE *) ctx, "%s", str );
     fflush(  (FILE *) ctx  );
 }
+void handle_INDV_PRIVMSG(char *msg, char *pos, ssl_context * ssl) {
+
+}
 void handle_PING(char * msg, char * pos, ssl_context * ssl) {
   debug("got a ping request");
   char response[4096] = "PONG";
   strncat((char *) &response,pos+4,sizeof(response) - 6);
   strncat((char *) &response,"\n",2);
-  sender(ssl, (char *) &response, strlen(response));
+  sender(ssl, (unsigned char *) &response, strlen(response));
 }
 void handle_CHAN_PRIVMSG(char * msg, char * pos, ssl_context * ssl) {
-  msg = pos+17;
-  debug("reading channel msg: %s", msg);
-  fwrite(msg,strlen(msg),sizeof(char), fp);
+  char * user_pos;
+  if((user_pos = strstr(msg,"!"))==NULL) {
+    debug("unexpected user string format");
+    return;
+  }
+  char user[user_pos-msg]; // remember msg has : at beginning so there is a null byte accounted for
+  memset(&user, 0, user_pos-msg);
+  memcpy(&user,msg+1,user_pos-msg-1);
+
+  msg = pos-1;
+  if((pos = strstr(pos, ":"))==NULL) {
+    debug("empty, malformed PRIVMSG received.");
+    return;
+  }
+  char chan[pos-msg];
+  memset(&chan, 0, pos-msg);
+  memcpy(&chan, msg,pos-msg-1);
+  pos++; 
+  
+  debug("%s in channel: %s has msg: %s", (char *) &user, (char *) &chan, pos);
+  fwrite(pos,strlen(pos),sizeof(char), fp);
   fwrite("\n",1,1,fp);
 }
 
 void parse_line(char * msg, ssl_context *ssl) {
-  debug( "got line: %s",msg);
+  //debug( "got line: %s",msg);
   char * pos = NULL;
   if((pos= strstr(msg, "PING")) !=NULL) {
     handle_PING(msg,pos,ssl);
-  } else if((pos=strstr(msg, "PRIVMSG #sigsac :")) != NULL) {
-    handle_CHAN_PRIVMSG( msg, pos, ssl);
+  } else if((pos=strstr(msg, "PRIVMSG #")) != NULL) {
+    handle_CHAN_PRIVMSG( msg, pos+9, ssl);
+  } else if((pos=strstr(msg, "PRIVMSG ")) != NULL) {
+    handle_INDV_PRIVMSG( msg, pos+8, ssl);
   }
 }
 
 void handle_msg(char * msg, ssl_context * ssl) {
-debug("handling message...");
  char buf[4096];
  memset(&buf,0,4096);
  char * buf_ptr = (char *) &buf;
  char * msg_ptr = msg;
  int pos = 0;
- int STATE = -1;
  do
   {
   if(*msg_ptr == '\n') {
@@ -149,7 +170,7 @@ void *listener(void * ssl) {
       
       polarssl_printf( "  < Read from server:" );
       fflush( stdout );
-      char buf[4096];
+      unsigned char buf[4096];
       int len, ret = -1;
 
       do
@@ -182,10 +203,10 @@ void *listener(void * ssl) {
           handle_msg( (char *) &buf, (ssl_context *) ssl);
       }
       while( alive );
-      return;
+      return NULL;
 }
 
-int sender(ssl_context * ssl, char * msg, int len) {
+int sender(ssl_context * ssl, unsigned char * msg, int len) {
       int ret; 
       while( ( ret = ssl_write( ssl, msg, len ) ) <= 0 )
       {
@@ -367,7 +388,7 @@ int main( int argc, char *argv[] )
     strncat((char *) &buf," * 0 :jianmin's irc bot\nNICK ",sizeof(buf)-strlen((char *) &buf)-1);
     strncat((char*) &buf,BOT_NAME, min(strlen(BOT_NAME),sizeof(buf)-strlen((char *)&buf)-1));
     strncat((char *) &buf, "\n",1);
-    sender(&ssl, (char *) &buf, strlen((char *) &buf));
+    sender(&ssl, (unsigned char *) &buf, strlen((char *) &buf));
 
     while( again ) {
       polarssl_printf( "  Enter info to write to server:" );
@@ -383,7 +404,7 @@ int main( int argc, char *argv[] )
         fp = fopen(LOG_FILE,"a+");
       }
       
-      if((ret = sender(&ssl, (char *) &buf, len))==-1) goto exit;
+      if((ret = sender(&ssl, (unsigned char *) &buf, len))==-1) goto exit;
     }
     alive = 0;
     ssl_close_notify( &ssl );
