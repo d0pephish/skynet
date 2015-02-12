@@ -38,6 +38,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include "macros.h"
+#include "parser.c"
 
 #include "polarssl/net.h"
 #include "polarssl/debug.h"
@@ -67,7 +68,7 @@ int main( int argc, char *argv[] )
 
 #define SERVER_PORT 6697
 #define SERVER_NAME "oxiii.net"
-#define BOT_NAME "ircbot"
+#define BOT_NAME "testbot"
 #define LOG_FILE "ircbot.logs"
 #define DEBUG_LEVEL 1
 
@@ -98,7 +99,40 @@ static void my_debug( void *ctx, int level, const char *str )
     fflush(  (FILE *) ctx  );
 }
 void handle_INDV_PRIVMSG(char *msg, char *pos, ssl_context * ssl) {
+  char * user_pos;
+  if((user_pos = strstr(msg,"!"))==NULL) {
+    debug("unexpected user string format");
+    return;
+  }
+  char user[user_pos-msg]; // remember msg has : at beginning so there is a null byte accounted for
+  memset(&user, 0, user_pos-msg);
+  memcpy(&user,msg+1,user_pos-msg-1);
 
+  msg = pos-1;
+  if((pos = strstr(pos, ":"))==NULL) {
+    debug("empty, malformed PRIVMSG received.");
+    return;
+  }
+  char chan[pos-msg];
+  memset(&chan, 0, pos-msg);
+  memcpy(&chan, msg,pos-msg-1);
+  pos++; 
+  debug("%s to user: %s has msg: %s", (char *) &user, (char *) &chan, pos);
+  fwrite(pos,strlen(pos),sizeof(char), fp);
+  char sent_seed[strlen(pos)];
+  memset(&sent_seed,0,strlen(pos));
+  memcpy(&sent_seed,pos,strlen(pos)-1);
+  char * received_word = malloc(strlen(pos));
+  memset(received_word,0,strlen(pos));
+  memcpy(received_word,pos,strlen(pos)-1);
+  char * sentence = build_sentence(received_word,word_list);
+  int reply_len = strlen(sentence) + strlen(user)+11;
+  char * reply = malloc(reply_len);
+  memset(reply, 0, reply_len);
+  sprintf(reply, "PRIVMSG %s :%s\r\n",user, sentence);
+  sender(ssl,(unsigned char *) reply,reply_len-1);
+  free(received_word);
+  free(reply);
 }
 void handle_PING(char * msg, char * pos, ssl_context * ssl) {
   debug("got a ping request");
@@ -126,7 +160,7 @@ void handle_CHAN_PRIVMSG(char * msg, char * pos, ssl_context * ssl) {
   memset(&chan, 0, pos-msg);
   memcpy(&chan, msg,pos-msg-1);
   pos++; 
-  
+  parse(pos);
   debug("%s in channel: %s has msg: %s", (char *) &user, (char *) &chan, pos);
   fwrite(pos,strlen(pos),sizeof(char), fp);
   fwrite("\n",1,1,fp);
@@ -225,6 +259,7 @@ int main( int argc, char *argv[] )
 {
     
     fp = fopen(LOG_FILE,"a+");
+    parse_from_file(fp);
     int ret, len, server_fd = -1;
     unsigned char buf[4096];
     const char *pers = "irc_ssl_interactive_client";
@@ -397,11 +432,15 @@ int main( int argc, char *argv[] )
       memset( (char *) &buf, 0, 4096);
       len = strlen(fgets((char *) &buf, 4095, stdin));
 
-      if(strncmp((char *) &buf, "quit",4)==0) again = 0;
+      if(strncmp((char *) &buf, "quit",4)==0) {
+        again = 0;
+        continue;
+      }
       if(strncmp((char *) &buf, "fflush",6)==0) {
         debug("flushing...");
         fclose(fp);
         fp = fopen(LOG_FILE,"a+");
+        continue;
       }
       
       if((ret = sender(&ssl, (unsigned char *) &buf, len))==-1) goto exit;

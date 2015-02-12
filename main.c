@@ -1,7 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <limits.h>
 #include <time.h>
 #include "parser.c"
 /*
@@ -26,11 +25,13 @@
 int main(int argc, char * argv[]) {
   FILE *fp;
   char * word_seed = NULL;
+  char * output;
   if(argc<=1) {
   printf("must give file to read from: %s <filename>. Running on sample data.\n",argv[0]);
   parse("A comparative statement has the format if then. this is a test of the predictive text. If it works, this might tell you a pattern of what words to use. We'll havee to see if it works. I wonder if it will tell you what word comes next in the sentence or if it will be way off in its predictions. the more data there is, the better it will be. ");
   } else {
     fp = fopen(argv[1], "r");
+    parse_from_file(fp);
     char buf[1024];
     char * buf_p = (char *) &buf;
     int count = 0;
@@ -58,7 +59,10 @@ int main(int argc, char * argv[]) {
       }
     }
     if(argc==3) {
-      build_sentence(argv[2]);
+      
+      output = build_sentence(argv[2], word_list);
+      printf("%s",output);
+      free(output);
       return 0;
     }
   }
@@ -68,11 +72,17 @@ int main(int argc, char * argv[]) {
 
     while(1) {
       word_seed = get_user_input("Enter a single word: ");
-      build_sentence(word_seed);
+      output = build_sentence(word_seed, word_list);
+      printf("%s",output);
+      free(output);
       free(word_seed);
     }
   } else {
     srand(time(NULL));
-    build_sentence(gen_random_word_from_tree());
+    output = build_sentence(gen_random_word_from_tree(),word_list);
+    printf("%s",output);
+    free(output);
   }
+  destroy_tree(word_list);
+  return 0;
 }

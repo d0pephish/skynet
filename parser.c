@@ -1,4 +1,8 @@
 #include "macros.h"
+#include <ctype.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <limits.h>
 /*
 
   This is version 0.1 of a predictive text tool. Every link between one word and the next is tracked, and multiple occurances of a link increases its score. 
@@ -18,8 +22,8 @@ int minimum_score = 0;        // stop following branch if score gets below this 
 int no_repeats = 1;           // do not repeat a word
 
 //GLOBALS
-struct word_node * word_list = NULL;
 
+extern struct word_node * word_list = NULL;
 //STRUCTS
 struct branch {
   int score;
@@ -43,10 +47,10 @@ char * get_user_input(char *);
 struct word * get_word_by_index(struct word_node *, int *);
 int tree_size(struct word_node *);
 char * gen_random_word_from_tree();
-void walk_link(struct word *);
+char * walk_link(struct word *);
 struct word * find_word(char *, struct word_node *);
 struct branch * build_branch(struct word *);
-void build_sentence(char *);
+char * build_sentence(char *, struct word_node *);
 void print_branches(struct word *);
 struct branch * build_branch(struct word *);
 void link_words(struct word *, struct word *);
@@ -58,7 +62,69 @@ struct word * build_word(char *, int);
 //void prep_word_list(struct word_list *);
 void parse(char *);
 int valid_char(char);
+struct word_node * clone_tree(struct word_node *);
+void destroy_tree(struct word_node *);
+struct word * clone_word(struct word *);
+struct word_node * recursive_clone_tree(struct word_node *);
+void fix_clone_links(struct word_node *, struct word_node *);
+void parse_from_file(FILE *);
 
+
+struct word * clone_word(struct word * original) {
+  struct word * new_word =  build_word(original->value,original->len);
+  new_word->used              = original->used;
+  new_word->max_branches      = original->max_branches;
+  new_word->branch_list_index = original->branch_list_index;
+  free(new_word->branches);
+  new_word->branches = (struct branch **) malloc(sizeof(struct branch *) * new_word->max_branches);
+  memcpy(new_word->branches,original->branches, sizeof(struct  branch *) * new_word->max_branches);
+
+  return new_word; 
+}
+void fix_clone_links(struct word_node * new, struct word_node * top) {
+  int i=0;
+  struct branch * temp;
+  if(new==NULL) return;
+  while(i<new->item->branch_list_index) {
+    temp = new->item->branches[i];
+    new->item->branches[i] = build_branch(find_word(temp->item->value,top));
+    new->item->branches[i]->score = temp->score;
+    i++;
+  }
+  fix_clone_links(new->left,top);
+  fix_clone_links(new->right,top);
+}
+struct word_node * clone_tree(struct word_node * original) {
+  struct word_node * new_tree = recursive_clone_tree(original);
+  fix_clone_links(new_tree, new_tree);
+  return new_tree;
+}
+struct word_node * recursive_clone_tree(struct word_node * original) {
+  if (original == NULL) return NULL;
+  struct word * new_word = clone_word(original->item);
+  struct word_node * new_node = build_node(new_word);
+  new_node->left = recursive_clone_tree(original->left);
+  new_node->right = recursive_clone_tree(original->right);
+  new_node->item = new_word;
+  
+  return new_node;
+}
+
+void destroy_tree(struct word_node * node) {
+  if(node==NULL) return;
+  int i = 0;
+  destroy_tree(node->left);
+  destroy_tree(node->right);
+  while (i<node->item->branch_list_index) {
+    free(node->item->branches[i]);
+    i++;
+  }
+  free(node->item->branches);
+  free(node->item->value);
+  free(node->item);
+  free(node);
+  return;
+}
 
 char * get_user_input(char * msg) {
   printf("%s",msg);
@@ -77,6 +143,34 @@ char * get_user_input(char * msg) {
     return get_user_input("");
   }
   return input;
+}
+void parse_from_file(FILE * fp) {
+    char buf[1024];
+    char * buf_p = (char *) &buf;
+    int count = 0;
+    char c;
+    memset(buf_p,0,1024);
+     if(fp==NULL)
+       exit(EXIT_FAILURE);
+    while((c= fgetc(fp)) !=EOF) {
+      if(count >=1023) {
+        parse(buf);
+        count = 0;
+        buf_p = (char *) &buf;
+        memset(buf_p, 0, 1024);
+      }
+      if(c!='\n' && c!= '\r') {
+        *buf_p = c;
+        buf_p++;
+        count++;
+      } else {
+        debug("parsing: %s\n",buf);
+        parse(buf);
+        count = 0;
+        buf_p = (char *) &buf;
+        memset(buf_p, 0, 1024);
+      }
+    }
 }
 void parse(char * input) {
   char * in_ptr = input;
@@ -127,28 +221,47 @@ void parse(char * input) {
   }
   //print_tree(word_list);
 }
-void build_sentence(char * input) {
-  printf("building sentence: %s",input);
-  struct word * starting_word = find_word(input,word_list); 
+char * build_sentence(char * input,struct word_node * orig_list) {
+  int len;
+  struct word_node * cur_list = clone_tree(orig_list);
+ char * sentence;
+ struct word * starting_word = find_word(input,cur_list); 
   if(starting_word == NULL) {
-    printf("\nno links to follow with this input.\n");
-    return;
+    sentence = malloc(18);
+    memcpy(sentence, "word not trained\n\0",18);
+  } else {
+    char * pre_sentence = walk_link(starting_word);
+    len = strlen(pre_sentence)+strlen(input)+1;
+    sentence = malloc(len);
+    memset(sentence,0,len);
+    sprintf(sentence,"%s%s",input,pre_sentence);
+    free(pre_sentence);
   }
-  walk_link(starting_word);
+  destroy_tree(cur_list);
+  return sentence;
 }
-void walk_link(struct word * item) {
+char * walk_link(struct word * item) {
   debug("walk_link: %p", item);
   
-  if(item==NULL) return; 
 
-struct branch * best_branch;
-  struct branch * cur_branch;
+  struct branch * best_branch = NULL;
+  struct branch * cur_branch = NULL;
   int best_score = INT_MIN;
   int i;
+  char * deeper;
+  char * cur_word;
+  char * concat;
+  int length;
+  if(item==NULL) {
+      cur_word = malloc(1);
+      memset(cur_word,0,1);
+      return cur_word;
+    }
 
 for(i=0;i<item->branch_list_index;i++) {
     cur_branch = item->branches[i];
-    if(cur_branch==NULL) return;
+    if(cur_branch==NULL) break; 
+    
     if(cur_branch->score > best_score && (cur_branch->item->used == 0 || no_repeats == 0)) {
       best_score = cur_branch->score;
       best_branch = cur_branch;
@@ -159,13 +272,24 @@ for(i=0;i<item->branch_list_index;i++) {
     }
   }
   if(best_score < minimum_score) {
-    printf(".\n");
-    return;
+    cur_word = malloc(3);
+    memset(cur_word, 0, 3);
+    memcpy(cur_word, ".\n",2);
+    return cur_word;
+  } else {
+    cur_word = best_branch->item->value;
+    best_branch->score--;
+    best_branch->item->used = 1;
   }
-  printf(" %s",best_branch->item->value);
-  best_branch->score--;
-  best_branch->item->used = 1;
-  walk_link(best_branch->item);
+  if(best_branch!=NULL) {
+    deeper = walk_link(best_branch->item);
+  } else deeper = walk_link(NULL);
+  length = strlen(deeper)+strlen(cur_word)+5;
+  concat = malloc(length);
+  memset(concat, 0, length);
+  sprintf(concat," %s%s", cur_word, deeper);
+  if(deeper != NULL) free(deeper);
+  return concat;
 }
 struct word * find_word(char * input, struct word_node * item) {
   debug("find_word %s, %p", input, item);
