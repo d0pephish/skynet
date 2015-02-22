@@ -68,7 +68,7 @@ int main( int argc, char *argv[] )
 
 #define SERVER_PORT 6697
 #define SERVER_NAME "oxiii.net"
-#define BOT_NAME "testbot"
+#define BOT_NAME "ircbot"
 #define LOG_FILE "ircbot.logs"
 #define DEBUG_LEVEL 1
 
@@ -126,10 +126,10 @@ void handle_INDV_PRIVMSG(char *msg, char *pos, ssl_context * ssl) {
   memset(received_word,0,strlen(pos));
   memcpy(received_word,pos,strlen(pos)-1);
   char * sentence = build_sentence(received_word,word_list);
-  int reply_len = strlen(sentence) + strlen(user)+11;
-  char * reply = malloc(reply_len);
+  int reply_len = strlen(sentence) + strlen(user)+12;
+  char * reply = (char *) malloc(reply_len);
   memset(reply, 0, reply_len);
-  sprintf(reply, "PRIVMSG %s :%s\r\n",user, sentence);
+  snprintf(reply, reply_len, "PRIVMSG %s :%s\n",user, sentence);
   sender(ssl,(unsigned char *) reply,reply_len-1);
   free(received_word);
   free(reply);
@@ -160,10 +160,25 @@ void handle_CHAN_PRIVMSG(char * msg, char * pos, ssl_context * ssl) {
   memset(&chan, 0, pos-msg);
   memcpy(&chan, msg,pos-msg-1);
   pos++; 
-  parse(pos);
   debug("%s in channel: %s has msg: %s", (char *) &user, (char *) &chan, pos);
-  fwrite(pos,strlen(pos),sizeof(char), fp);
-  fwrite("\n",1,1,fp);
+  if(strstr(pos,">>")==pos) {
+    debug("User has submitted a message seed: %s",pos+2);
+    char * received_word = malloc(strlen(pos+2));
+    memset(received_word,0,strlen(pos+2));
+    memcpy(received_word,pos+2,strlen(pos+2)-1);
+    char * sentence = build_sentence(received_word,word_list);
+//    char * sentence = build_sentence(gen_random_word_from_tree(),word_list);
+    int reply_len = strlen(sentence) + strlen(user)+12;
+    char * reply = (char *) malloc(reply_len);
+    memset(reply, 0, reply_len);
+    snprintf(reply, reply_len, "PRIVMSG %s :%s\n", chan, sentence);
+    sender(ssl,(unsigned char *) reply,reply_len-1);
+    free(reply);
+  } else {
+    parse(pos);
+    fwrite(pos,strlen(pos),sizeof(char), fp);
+    fwrite("\n",1,1,fp);
+  }
 }
 
 void parse_line(char * msg, ssl_context *ssl) {
