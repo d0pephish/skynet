@@ -23,7 +23,7 @@ int no_repeats = 1;           // do not repeat a word
 int buff_size = 250;
 char empty_error[] = "word not trained\n";
 //GLOBALS
-extern unsigned long long id_tracker = 1;
+extern unsigned long long int id_tracker = 1;
 extern struct word_node * word_list = NULL;
 //STRUCTS
 typedef struct phrase_id_node phrase_id_node;
@@ -31,7 +31,9 @@ typedef struct branch branch;
 struct branch {
   int score;
   struct word * item;
-  unsigned long long int id;
+  unsigned long long int ** id;
+  int id_index;
+  int id_max;
 };
 struct phrase_id_node {
   unsigned long long int id;
@@ -69,7 +71,7 @@ char * walk_link(struct word *,phrase_id_node *);
 struct word * find_word(char *, struct word_node *);
 char * build_sentence(char *, struct word_node *);
 void print_branches(struct word *);
-branch * build_branch(struct word *, unsigned long long);
+branch * build_branch(struct word *, unsigned long long int);
 void link_words(struct word *, struct word *);
 void prep_branch_list(struct word *);
 struct word_node * build_node(struct word *);
@@ -85,8 +87,8 @@ struct word * clone_word(struct word *);
 struct word_node * recursive_clone_tree(struct word_node *);
 void fix_clone_links(struct word_node *, struct word_node *);
 void parse_from_file(FILE *);
-phrase_id_node * build_phrase_id_node(unsigned long long, int);
-phrase_id_node * insert_phrase_id_node(phrase_id_node *, unsigned long long id, int);
+phrase_id_node * build_phrase_id_node(unsigned long long int, int);
+phrase_id_node * insert_phrase_id_node(phrase_id_node *, unsigned long long int id, int);
 void split_list_phrase_id_nodes(phrase_id_node *, phrase_id_node **, phrase_id_node **);
 phrase_id_node * sorted_merge_phrase_id_nodes(phrase_id_node *, phrase_id_node *);
 void merge_sort_phrase_id_nodes(phrase_id_node **);
@@ -94,6 +96,8 @@ struct sentence_word * build_sentence_word(char *, int);
 struct sentence_word * process_sentence(char *);
 void free_sentence_word(struct sentence_word *);
 char * copy_sentence(char *);
+unsigned long long int * build_id(unsigned long long int);
+void print_id_list(phrase_id_node *);
 
 
 struct word * clone_word(struct word * original) {
@@ -112,6 +116,21 @@ struct word * clone_word(struct word * original) {
 
   return new_word; 
 }
+branch * clone_branch(branch * orig, struct word_node * top) {
+  int i;
+  branch * cloned = build_branch(find_word(orig->item->value,top), 0);
+  cloned->score = orig->score;
+  cloned->id_index = orig->id_index;
+  cloned->id_max = orig->id_max;
+  free(cloned->id[0]);
+  free(cloned->id);
+  cloned->id = (unsigned long long int **) malloc(cloned->id_max*sizeof(unsigned long long int *));
+  memcpy(cloned->id,orig->id,cloned->id_max*sizeof(unsigned long long int *)); 
+  for(i=0;i<cloned->id_index;i++) {
+    cloned->id[i] = build_id(*cloned->id[i]);
+  }
+  return cloned;
+}
 void fix_clone_links(struct word_node * new, struct word_node * top) {
   int i=0;
   struct word * word_holder;
@@ -124,15 +143,22 @@ void fix_clone_links(struct word_node * new, struct word_node * top) {
       debug("Cannot find word: temp->item->value:%s|", temp->item->value);
       exit(1);
     }
-    new->item->branches[i] = build_branch(find_word(temp->item->value,top),temp->id);
-    new->item->branches[i]->score = temp->score;
+    new->item->branches[i] = clone_branch(temp,top);
+    //new->item->branches[i] = build_branch(find_word(temp->item->value,top),0);
+    //new->item->branches[i]->score = temp->score;
     i++;
   }
   i=0;
   while(i<new->item->prev_index) {
     temp = new->item->prev[i];
-    new->item->prev[i] = build_branch(find_word(temp->item->value,top),temp->id);
-    new->item->prev[i]->score = temp->score;
+    word_holder = find_word(temp->item->value,top);
+    if(word_holder==NULL) {
+      debug("Cannot find word: temp->item->value:%s|", temp->item->value);
+      exit(1);
+    }
+    new->item->prev[i] = clone_branch(temp,top);
+    //new->item->prev[i] = build_branch(find_word(temp->item->value,top),0);
+    //new->item->prev[i]->score = temp->score;
     i++;
   }
   fix_clone_links(new->left,top);
@@ -153,18 +179,27 @@ struct word_node * recursive_clone_tree(struct word_node * original) {
   
   return new_node;
 }
-
 void destroy_tree(struct word_node * node) {
+  //return;
   if(node==NULL) return;
   int i = 0;
+  int j;
   destroy_tree(node->left);
   destroy_tree(node->right);
   while (i<node->item->branch_list_index) {
+    for(j=0;j<node->item->branches[i]->id_index;j++) {
+      free(node->item->branches[i]->id[j]);
+    }
+    free(node->item->branches[i]->id);
     free(node->item->branches[i]);
     i++;
   }
   i = 0;
   while(i<node->item->prev_index) {
+    for(j=0;j<node->item->prev[i]->id_index;j++) {
+      free(node->item->prev[i]->id[j]);
+    }
+    free(node->item->prev[i]->id);
     free(node->item->prev[i]);
     i++;
   }
@@ -223,6 +258,7 @@ void parse_from_file(FILE * fp) {
     }
 }
 void parse(char * input) {
+  debug("parse %s",input);
   char * in_ptr = input;
   char buff[buff_size];
   char * buff_ptr = (char *) &buff;
@@ -276,7 +312,7 @@ void parse(char * input) {
   id_tracker++;
   //print_tree(word_list);
 }
-phrase_id_node * build_phrase_id_node(unsigned long long id, int confidence) {
+phrase_id_node * build_phrase_id_node(unsigned long long int id, int confidence) {
   phrase_id_node * node = (phrase_id_node *) malloc(sizeof(phrase_id_node));
   memset(node,0,sizeof(phrase_id_node));
   node->prev = NULL;
@@ -285,7 +321,7 @@ phrase_id_node * build_phrase_id_node(unsigned long long id, int confidence) {
   node->confidence = confidence;
   return node;
 }
-phrase_id_node * insert_phrase_id_node(phrase_id_node * node, unsigned long long id, int confidence) {
+phrase_id_node * insert_phrase_id_node(phrase_id_node * node, unsigned long long int id, int confidence) {
   //phrase_id_node * front = node;
   if(node==NULL) return build_phrase_id_node(id,confidence);
   if(id==node->id) {
@@ -324,7 +360,7 @@ phrase_id_node * sorted_merge_phrase_id_nodes(phrase_id_node * a, phrase_id_node
   else if (b == NULL) 
     return a;
 
-  if(a->id >= b->id) {
+  if(a->confidence >= b->confidence) {
     result = a;
     result->next = sorted_merge_phrase_id_nodes(a->next,b);
   } else {
@@ -400,17 +436,17 @@ void free_sentence_word(struct sentence_word * in) {
 }
 char * copy_sentence(char * input) {
   int len = strlen(input);
-  char * out = malloc(len+1);
-  memset(out,0,len+1);
+  char * out = malloc(len+2);
+  memset(out,0,len+2);
   memcpy(out,input,len);
   return out;
 }
 char * build_sentence(char * input,struct word_node * orig_list) {
   debug("build_sentence(): %s,%p",input, orig_list);
-  int len,i;
+  int len,i,j;
   int match = 0;
   //int confidence = 0;
-  //unsigned long long best_id = 0;
+  //unsigned long long int best_id = 0;
   struct word_node * cur_list = clone_tree(orig_list);
   char * new_sentence;
   struct word * cur_word;
@@ -442,17 +478,24 @@ char * build_sentence(char * input,struct word_node * orig_list) {
         if(strncmp(temp->value,seed_sentence->val,max(temp->len,strlen(seed_sentence->val))) ==0) {
           debug("match!");
           match = 1;
+          temp->used= 1;
           debug("adding id to list");
-          id_list = insert_phrase_id_node(id_list,cur_word->prev[i]->id,1);
+          for(j = 0;j<cur_word->prev[i]->id_index;j++) {
+            id_list = insert_phrase_id_node(id_list,*cur_word->prev[i]->id[j],1);
+          }
           debug("id list is: %p", id_list);
           cur_word = temp;
-          break;
+          //break;
         }
       }
       if(!match) break;
       match = 0;
     }
+    debug("id_list before sort:");
+    print_id_list(id_list);
     merge_sort_phrase_id_nodes(&id_list); 
+    debug("id_list after sort:");
+    print_id_list(id_list);
     debug("id_list is %p",id_list);
     debug("walk_link using word %s",starting_word->value);
     char * pre_sentence = walk_link(starting_word,id_list);
@@ -467,13 +510,13 @@ char * build_sentence(char * input,struct word_node * orig_list) {
   return new_sentence;
 }
 char * walk_link(struct word * item, phrase_id_node * priorities) {
-  debug("walk_link: %p,%p", item, priorities);
+  //debug("walk_link: %p,%p", item, priorities);
   
   phrase_id_node *priorities_ptr = priorities;
   branch * best_branch = NULL;
   branch * cur_branch = NULL;
   int best_score = INT_MIN;
-  int i;
+  int i,j;
   char * deeper;
   char * cur_word;
   char * concat;
@@ -485,14 +528,16 @@ char * walk_link(struct word * item, phrase_id_node * priorities) {
       return cur_word;
     }
   while(priorities_ptr!=NULL) {
-    debug("inside priorities loop");
+    //debug("inside priorities loop");
     for(i=0;i<item->branch_list_index;i++) {
       cur_branch = item->branches[i];
       //if(cur_branch==NULL) break; 
-      if(cur_branch->id == priorities_ptr->id) {
-        if(best_branch==NULL || rand()%4 == 1) {
-          best_branch = cur_branch;
-          best_score = cur_branch->score;
+      for(j=0; j<cur_branch->id_index;j++) {
+        if(*cur_branch->id[j] == priorities_ptr->id) {
+          if((best_branch==NULL || rand()%4 == 1) && (cur_branch->item->used == 0 || no_repeats == 0) && rand()%10 != 9) {
+            best_branch = cur_branch;
+            best_score = cur_branch->score;
+          }
         }
       }
     }
@@ -505,8 +550,8 @@ char * walk_link(struct word * item, phrase_id_node * priorities) {
     for(i=0;i<item->branch_list_index;i++) {
       cur_branch = item->branches[i];
       if(cur_branch==NULL) break; 
-      //debug("cur_branch->item: %p, cur_branch->id: %d, cur_branch->score: %d",cur_branch->item,cur_branch->id,cur_branch->score); 
-      if((cur_branch->score > best_score || rand()%(1+best_score-cur_branch->score) == 0 ) && (cur_branch->item->used == 0 || no_repeats == 0)) {
+      //debug("cur_branch->item: %p, cur_branch->id: %d, cur_branch->score: %d",cur_branch->item,(int) cur_branch->id,cur_branch->score); 
+      if((cur_branch->score > best_score || rand()%(1+best_score-cur_branch->score) == 0 ) && (cur_branch->item->used == 0 || no_repeats == 0) && rand()%5!=4) {
         best_score = max(cur_branch->score,best_score);
         best_branch = cur_branch;
       } else if(cur_branch->score == best_score) { 
@@ -537,7 +582,7 @@ char * walk_link(struct word * item, phrase_id_node * priorities) {
   return concat;
 }
 struct word * find_word(char * input, struct word_node * item) {
-//  debug("find_word %s, %p", input, item);
+  //debug("find_word %s, %p", input, item);
   if(item==NULL) return NULL;
   int cmp = strncmp(item->item->value,input,max(item->item->len,strlen(input)));
   if(cmp==0) {
@@ -554,19 +599,34 @@ int valid_char(char c) {
   return 1;
 }
 
-branch * build_branch(struct word * item, unsigned long long id) {
+unsigned long long int * build_id(unsigned long long int id) {
+  unsigned long long int * new_id = malloc(sizeof(unsigned long long int));
+  memcpy(new_id,&id,sizeof(unsigned long long int));
+  return new_id;
+}
+
+branch * build_branch(struct word * item, unsigned long long int id) {
   
   branch * this_branch = (branch *) malloc(sizeof(branch));
   memset(this_branch, 0, sizeof(branch));
 
   this_branch->item = item;
   this_branch->score = 1;
-  this_branch->id = id;
-
+  this_branch->id_index = 1;
+  this_branch->id_max = starting_branch_size;
+  this_branch->id = (unsigned long long int **) malloc(starting_branch_size*sizeof(unsigned long long int *));
+  memset(this_branch->id,0,sizeof(unsigned long long int *)*starting_branch_size);
+  this_branch->id[0] = build_id(id);
   return this_branch;
 }
+void adjust_branch_id_list_size(branch * this_branch) {
+  if(this_branch->id_index >= this_branch->id_max) {
+    this_branch->id_max = this_branch->id_max*2;
+    this_branch->id = (unsigned long long int **) realloc(this_branch->id, this_branch->id_max*sizeof(unsigned long long int *));
+  }
+}
 void link_words(struct word * prev, struct word * cur) {
-  debug("link_words: %p, %p", prev, cur);
+  debug("link_words: %s, %s", prev->value, cur->value);
   int i,cmp;
   int dont_link = 0;
   struct word * branch_list_word;
@@ -579,6 +639,9 @@ void link_words(struct word * prev, struct word * cur) {
     cmp = strncmp(branch_list_word->value, cur->value, max(branch_list_word->len, cur->len));
     if(cmp==0) {
       if(use_weights==1) prev->branches[i]->score = prev->branches[i]->score + 1;
+      adjust_branch_id_list_size(prev->branches[i]);
+      prev->branches[i]->id[prev->branches[i]->id_index] = build_id(id_tracker);
+      prev->branches[i]->id_index++;
       dont_link = 1;
     }
   }
@@ -591,6 +654,9 @@ void link_words(struct word * prev, struct word * cur) {
     cmp = strncmp(branch_list_word->value, prev->value, max(branch_list_word->len, prev->len));
     if(cmp==0) {
       if(use_weights==1) cur->prev[i]->score = cur->prev[i]->score + 1;
+      adjust_branch_id_list_size(cur->prev[i]);
+      cur->prev[i]->id[cur->prev[i]->id_index] = build_id(id_tracker);
+      cur->prev[i]->id_index++;
       return;
     }
   }
@@ -674,7 +740,7 @@ char * gen_random_word_from_tree() {
   return ran_word->value;
 }
 struct word * get_word_by_index(struct word_node * tree_node, int * i) {
-  debug("get_word_by_index, %p,%p(%i)",tree_node, i, *i);
+  //debug("get_word_by_index, %p,%p(%i)",tree_node, i, *i);
   if (tree_node== NULL) return NULL;
   if (*i<=1) return tree_node->item;
   (*i)--;
@@ -688,6 +754,11 @@ struct word * get_word_by_index(struct word_node * tree_node, int * i) {
 int tree_size(struct word_node * tree_node) {
   if (tree_node==NULL) return 0;
   return 1 + max(tree_size(tree_node->left), tree_size(tree_node->right));
+}
+void print_id_list(phrase_id_node * cur) {
+  if(cur==NULL) return;
+  debug("->confidence: %d, id: %11d",cur->confidence,(unsigned int) cur->id);
+  print_id_list(cur->next);
 }
 void print_tree(struct word_node * tree_node) {
   if(tree_node==NULL)
