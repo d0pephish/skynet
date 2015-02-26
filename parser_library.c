@@ -271,19 +271,17 @@ void parse(char * input) {
   
   while ((*in_ptr)!=0x00) {
     
-    if (!valid_char((char) *in_ptr)) {
-      debug("invalid char! skipping.");    
-    } else if(word_size >=(buff_size-1)) {
+    if(word_size >=(buff_size-1)) {
       debug("word too big! stopping.");
       break;
+    }
+    //if (!valid_char((char) *in_ptr)) {
     
-    } else if ((*in_ptr == ' ' || *in_ptr == '.' || *(in_ptr+1)==0x00) || *(in_ptr+1)=='\n' || *in_ptr == '!' || *in_ptr == '?') {
+   // } else 
+    if ((valid_char((char) *in_ptr) || *in_ptr == '\n') && ((*in_ptr == ' ' || *in_ptr == '.' || *(in_ptr+1)==0x00) || *(in_ptr+1)=='\n' || *in_ptr == '!' || *in_ptr == '?')) {
       if(( *(in_ptr+1)== '\n' || *(in_ptr+1)==0x00 )&& (*in_ptr)!= ' ' && (*in_ptr)!= '.' && (*in_ptr)!='!' && *in_ptr != '?') {
         *buff_ptr = tolower(*in_ptr);
         word_size++;
-      }
-      if (*in_ptr == '.') {
-        prev_word =NULL;
       }
       
       if (word_size>0) {
@@ -297,6 +295,11 @@ void parse(char * input) {
       buff_ptr= (char *) &buff;
       memset(buff_ptr, 0,250);
       word_size = 0;
+      if (*in_ptr == '.' || *in_ptr == '?' || *in_ptr == '!') {
+        cur_word =NULL;
+        id_tracker++;
+        debug("end of sentence reached");
+      }
     
     } else {
       
@@ -460,7 +463,7 @@ char * build_sentence(char * input,struct word_node * orig_list) {
   }
   debug("seed_sentence->val: %s",seed_sentence->val);
   struct word * starting_word = find_word(seed_sentence->val,cur_list); 
-  debug("found word: %p",starting_word);
+  //debug("found word: %p",starting_word);
   cur_word = starting_word;
   if(starting_word == NULL) {
     debug("starting word is null");
@@ -483,7 +486,7 @@ char * build_sentence(char * input,struct word_node * orig_list) {
           for(j = 0;j<cur_word->prev[i]->id_index;j++) {
             id_list = insert_phrase_id_node(id_list,*cur_word->prev[i]->id[j],1);
           }
-          debug("id list is: %p", id_list);
+          //debug("id list is: %p", id_list);
           cur_word = temp;
           //break;
         }
@@ -594,8 +597,10 @@ struct word * find_word(char * input, struct word_node * item) {
   }
 }
 int valid_char(char c) {
-  if(c<0x20) return 0;
-  if(c>0x7e) return 0;
+  if(c<0x20 || c>0x7e) {
+    debug("invalid char! skipping."); 
+    return 0;
+  }
   return 1;
 }
 

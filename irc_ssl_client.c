@@ -3,7 +3,8 @@
 #include <pthread.h>
 #include <signal.h>
 #include "macros.h"
-#include "parser.c"
+#include "ssl_functions.c"
+//#include "parser_library.c"
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
@@ -11,28 +12,27 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
+#include <dlfcn.h>
 
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
-
+#define DYN_LIB "/ailib.so"
 #define SERVER_PORT 6697
 #define SERVER_NAME "oxiii.net"
-#define BOT_NAME "ircbot"
+#define BOT_NAME "skynet"
 #define LOG_FILE "ircbot.logs"
 
 //TO DO: wrap context in a struct so i only have to pass one object around rather than a ton or use globals.
 
 typedef struct {
-  int socket;
-  SSL *ssl_handle;
-  SSL_CTX *ssl_context;
-} connection;
-typedef struct {
   connection * c;
   char * server_name;
   char * bot_name;
+  char * log_name;
+  FILE * log_fp;
+  pthread_t * lth;
   int server_port; 
 } irc_session_node;
 
@@ -40,138 +40,19 @@ typedef struct {
 
 
 int alive = 1;
+void (*handle_msg)(char*, connection *, int, FILE *);
+void *(*extra_feature_handler)(char *, int);
+void (*parse_from_file)(FILE *);
 FILE * fp;
 
 
 
 //PROTOTYPES
-int tcp_connect(char *, int);
-connection * ssl_connect(char *, int);
-void ssl_disconnect(connection *);
-int ssl_write(connection *, char *, int);
-int ssl_read(connection *, char **);
-void parse_line(char *, connection *);
-int sender(connection *, char *, int);
+void local_parse_line(char *, connection *);
 void *listener(void *);
-void parse_line(char *, connection *);
-void handle_msg(char *, connection *, int);
-void handle_INDV_PRIVMSG(char *, char *, connection *);
-void handle_PING(char *, char *, connection *);
-void handle_CHAN_PRIVMSG(char *, char *, connection *);
+void local_handle_msg(char *, connection *, int);
 
 //FUNCTIONS
-int tcp_connect(char * serv, int port) {
-  int error, handle;
-  struct hostent *host;
-  struct sockaddr_in server;
-  
-  host = gethostbyname(serv);
-  handle = socket(AF_INET, SOCK_STREAM, 0);
-
-  if (handle == -1) {
-    perror("socket");
-    handle = 0;
-  } else {
-    server.sin_family = AF_INET;
-    server.sin_port = htons(port);
-    server.sin_addr =  *((struct in_addr *) host->h_addr);
-    bzero(&(server.sin_zero),8);
-    
-    error = connect(handle, (struct sockaddr *) &server, sizeof(struct sockaddr));
-  
-    if (error == -1) {
-      perror("connect");
-      handle = 0;
-    }
-
-  }
-  return handle;
-}
-
-connection *ssl_connect(char * server, int port) {
-  connection *c;
-
-  c = malloc(sizeof(connection));
-  c->ssl_handle = NULL;
-  c->ssl_context = NULL;
-
-  c->socket = tcp_connect(server, port);
-
-  if(c->socket) {
-    SSL_load_error_strings();
-    SSL_library_init();
-    
-    c->ssl_context = SSL_CTX_new(SSLv23_client_method());
-    if (c->ssl_context == NULL) 
-      ERR_print_errors_fp(stderr);
-    
-    c->ssl_handle = SSL_new (c->ssl_context);
-    if(c->ssl_handle==NULL)
-      ERR_print_errors_fp(stderr);
-  
-    if(!SSL_set_fd (c->ssl_handle, c->socket))
-      ERR_print_errors_fp(stderr);
-
-    if(SSL_connect(c->ssl_handle) != 1)
-      ERR_print_errors_fp(stderr); 
-  } else {
-    perror ("Connect failed");
-  }
-  return c;
-}
-
-void ssl_disconnect(connection * c) {
-  if (c->socket)
-    close(c->socket);
-  if(c->ssl_handle) {
-    SSL_shutdown(c->ssl_handle);
-    SSL_free(c->ssl_handle);
-  }
-  if(c->ssl_context)
-    SSL_CTX_free(c->ssl_context);
-  free(c);
-}
-
-int ssl_read(connection *c, char ** buff) {
-  int read_size = 4096;
-  char * rc = NULL; //malloc(read_size * sizeof(char) + 1);
-  int len = 0;
-  int received = 0;
-  int count = 0;
-  char buffer[read_size];
-  memset((char *)&buffer, 0, read_size);
-  
-  if(c) {
-    while(alive) {
-      rc = (char *) realloc(rc, (count + 1) * read_size * sizeof(char) + 1);
-      received = SSL_read(c->ssl_handle, buffer, read_size);
-      buffer[received] = '\0';
-      
-      if(received > 0)
-        memcpy(rc,&buffer,read_size);
-        //rc = strncat (rc, (char *) &buffer,read_size);
-      len += received;
-      if(received < read_size)
-        break;
-      count++;
-    }
-  }
-  rc[len+1] = '\0';
-  *buff = rc;
-  return len;
-}
-
-int ssl_write(connection * c, char * msg, int len) {
-  if(c)
-    return SSL_write(c->ssl_handle, msg, len);
-  else
-    return -1;
-}
-
-
-
-
-
 
 void cleanup_and_quit(int n) {
   if(alive) {
@@ -181,104 +62,23 @@ void cleanup_and_quit(int n) {
 }
 
 
-void handle_INDV_PRIVMSG(char *msg, char *pos, connection * c) {
-  char * user_pos;
-  if((user_pos = strstr(msg,"!"))==NULL) {
-    debug("unexpected user string format");
-    return;
-  }
-  char user[user_pos-msg]; // remember msg has : at beginning so there is a null byte accounted for
-  memset(&user, 0, user_pos-msg);
-  memcpy(&user,msg+1,user_pos-msg-1);
-
-  msg = pos-1;
-  if((pos = strstr(pos, ":"))==NULL) {
-    debug("empty, malformed PRIVMSG received.");
-    return;
-  }
-  char chan[pos-msg];
-  memset(&chan, 0, pos-msg);
-  memcpy(&chan, msg,pos-msg-1);
-  pos++; 
-  debug("%s to user: %s has msg: %s", (char *) &user, (char *) &chan, pos);
-  fwrite(pos,strlen(pos),sizeof(char), fp);
-  char sent_seed[strlen(pos)];
-  memset(&sent_seed,0,strlen(pos));
-  memcpy(&sent_seed,pos,strlen(pos)-1);
-  char * received_word = malloc(strlen(pos));
-  memset(received_word,0,strlen(pos));
-  memcpy(received_word,pos,strlen(pos)-1);
-  char * sentence = build_sentence(received_word,word_list);
-  int reply_len = strlen(sentence) + strlen(user)+12;
-  char * reply = (char *) malloc(reply_len);
-  memset(reply, 0, reply_len);
-  snprintf(reply, reply_len, "PRIVMSG %s :%s\n",user, sentence);
-  sender(c,(char *) reply,reply_len-1);
-  free(received_word);
-  free(reply);
-}
-void handle_PING(char * msg, char * pos, connection * c) {
+void local_handle_PING(char * msg, char * pos, connection * c) {
   debug("got a ping request");
   char response[4096] = "PONG";
   strncat((char *) &response,pos+4,sizeof(response) - 6);
   strncat((char *) &response,"\n",2);
   sender(c, (char *) &response, strlen(response));
 }
-void handle_CHAN_PRIVMSG(char * msg, char * pos, connection * c) {
-  char * user_pos;
-  if((user_pos = strstr(msg,"!"))==NULL) {
-    debug("unexpected user string format");
-    return;
-  }
-  char user[user_pos-msg]; // remember msg has : at beginning so there is a null byte accounted for
-  memset(&user, 0, user_pos-msg);
-  memcpy(&user,msg+1,user_pos-msg-1);
 
-  msg = pos-1;
-  if((pos = strstr(pos, ":"))==NULL) {
-    debug("empty, malformed PRIVMSG received.");
-    return;
-  }
-  char chan[pos-msg];
-  memset(&chan, 0, pos-msg);
-  memcpy(&chan, msg,pos-msg-1);
-  pos++; 
-  debug("%s in channel: %s has msg: %s", (char *) &user, (char *) &chan, pos);
-  if(strstr(pos,">>")==pos) {
-    debug("User has submitted a message seed: %s",pos+2);
-    char * received_word = malloc(strlen(pos+2));
-    memset(received_word,0,strlen(pos+2));
-    memcpy(received_word,pos+2,strlen(pos+2)-1);
-    char * sentence = build_sentence(received_word,word_list);
-//    char * sentence = build_sentence(gen_random_word_from_tree(),word_list);
-    int reply_len = strlen(sentence) + strlen(user)+12;
-    char * reply = (char *) malloc(reply_len);
-    memset(reply, 0, reply_len);
-    snprintf(reply, reply_len, "PRIVMSG %s :%s\n", chan, sentence);
-    sender(c,(char *) reply,reply_len-1);
-    free(reply);
-    free(sentence);
-    free(received_word);
-  } else {
-    parse(pos);
-    fwrite(pos,strlen(pos),sizeof(char), fp);
-    fwrite("\n",1,1,fp);
-  }
-}
-
-void parse_line(char * msg, connection * c) {
+void local_parse_line(char * msg, connection * c) {
   //debug( "got line: %s",msg);
   char * pos = NULL;
   if((pos= strstr(msg, "PING")) !=NULL) {
-    handle_PING(msg,pos,c);
-  } else if((pos=strstr(msg, "PRIVMSG #")) != NULL) {
-    handle_CHAN_PRIVMSG( msg, pos+9, c);
-  } else if((pos=strstr(msg, "PRIVMSG ")) != NULL) {
-    handle_INDV_PRIVMSG( msg, pos+8, c);
-  }
+    local_handle_PING(msg,pos,c);
+  } 
 }
 
-void handle_msg(char * msg, connection * c, int len) {
+void local_handle_msg(char * msg, connection * c, int len) {
  char buf[4096];
  if(len<1) return;
  memset(&buf,0,4096);
@@ -288,7 +88,7 @@ void handle_msg(char * msg, connection * c, int len) {
   while (*msg_ptr != '\0' && *msg_ptr != EOF && pos<sizeof(buf)) { 
     if(*msg_ptr == '\n') {
       *buf_ptr = '\0';
-      parse_line((char *) &buf, c);
+      local_parse_line((char *) &buf, c);
       buf_ptr = (char *) &buf;
       msg_ptr++;
     } else {
@@ -315,35 +115,93 @@ void *listener(void * c) {
           }
           printf( " %d bytes read:\n%s\n", len, data );
           debug( " %d bytes read\n%s", len, data );
-          handle_msg( data, (connection *) c, len);
+          if(handle_msg!=NULL) 
+            handle_msg(data, (connection *) c, len,fp); 
+          else 
+            local_handle_msg( data, (connection *) c, len);
+          
           free(data);
       }
       while( alive );
   return (NULL);
 }
 
-int sender(connection * c, char * msg, int len) {
-  debug("sender() is sending %d bytes of string |%s|",len,msg);
-      
-  len = ssl_write(c, msg, len);
-  if(len<=0)
-  perror("error writing");
-      
-  printf(" %d bytes written:\n%s\n", len, msg );
-  debug( " %d bytes written\n%s", len, msg );
-  return len;
+char * copy_str(char * input) {
+  int len = strlen(input);
+  char * out = malloc(len+2);
+  memset(out,0,len+2);
+  memcpy(out,input,len);
+  return out;
 }
+irc_session_node * build_sess() {
+  return NULL;
+}
+void free_sess(irc_session_node * sess) {
+  if(sess->server_name) free(sess->server_name);
+  if(sess->bot_name) free(sess->bot_name);
+  if(sess->log_name) free(sess->log_name);
+  free(sess);
+
+  //TODO: fully impliment when you fully implement sessions
+}
+
 int main( int argc, char *argv[] )
 {
+
+    extra_feature_handler = NULL;
+    handle_msg = NULL; 
+    parse_from_file = NULL;
+
+    char lib_plus_cwd[1024];
+    memset(&lib_plus_cwd,0,sizeof(lib_plus_cwd));
+    if (getcwd(lib_plus_cwd, sizeof(lib_plus_cwd)) == NULL) {
+      debug("could not get pwd.");
+      memcpy(&lib_plus_cwd,DYN_LIB,strlen(DYN_LIB));
+    } else {
+      strncat(lib_plus_cwd,DYN_LIB,sizeof(lib_plus_cwd)-strlen(lib_plus_cwd)-1);
+    }
     
-    fp = fopen(LOG_FILE,"a+");
-    parse_from_file(fp);
+    void *temp_lib_handle;
+    void *lib_handle = dlopen (lib_plus_cwd, RTLD_NOW);
+    if (!lib_handle) {
+      fputs (dlerror(), stderr);
+      printf("\nError: could not load external libraries. this is going to be pretty boring.\n");
+    } else {
+      printf("Loading library: %s\n", lib_plus_cwd);
+      extra_feature_handler = dlsym(lib_handle, "extra_feature_handler");
+      handle_msg = dlsym(lib_handle, "handle_msg");
+      parse_from_file = dlsym(lib_handle, "parse_from_file");
+    }
+
+    
+    irc_session_node * sess = (irc_session_node *) malloc(sizeof(irc_session_node));
+    memset(sess,0,sizeof(irc_session_node));
+    if(argc==5) {
+      sess->server_name = copy_str(argv[1]);
+      sess->server_port = atoi(argv[2]);
+      sess->bot_name = copy_str(argv[3]);
+      sess->log_name = copy_str(argv[4]);  
+    } else {
+      printf(
+      "Run without arguments, run again with:\n" \
+      "  %s <servername> <portname> <botname> <logname>\n" \
+      "to change defaults.\n\n", argv[0]);
+      sess->server_port = SERVER_PORT;
+      sess->server_name = (char *) copy_str((char *) &SERVER_NAME);
+      sess->bot_name = (char *) copy_str((char *) &BOT_NAME);
+      sess->log_name = (char *) copy_str((char *) &LOG_FILE);
+    }
+    printf("Running with:\nserver:\t\t\t%s\nport:\t\t\t%d\nlog file:\t\t%s\n",sess->server_name,sess->server_port,sess->log_name);
+    printf("\nPress enter to continue.");
+    getchar(); 
+    fp = fopen(sess->log_name,"a+");
+    if(parse_from_file != NULL) parse_from_file(fp);
     int ret, len = -1;
     char buf[4096] = "";
     
     pthread_t lth;
 
-    connection * c = ssl_connect(SERVER_NAME,SERVER_PORT);
+    connection * c = ssl_connect(sess->server_name,sess->server_port);
 
     signal(SIGINT,cleanup_and_quit);
 
@@ -354,9 +212,9 @@ int main( int argc, char *argv[] )
     int again = 1;
     
     strncat((char *) &buf,"USER ",5);
-    strncat((char*) &buf,BOT_NAME, min(strlen(BOT_NAME),sizeof(buf)-strlen((char *)&buf)-1));
+    strncat((char*) &buf,sess->bot_name, min(strlen(sess->bot_name),sizeof(buf)-strlen((char *)&buf)-1));
     strncat((char *) &buf," * 0 :jianmin's irc bot\nNICK ",sizeof(buf)-strlen((char *) &buf)-1);
-    strncat((char*) &buf,BOT_NAME, min(strlen(BOT_NAME),sizeof(buf)-strlen((char *)&buf)-1));
+    strncat((char*) &buf,sess->bot_name, min(strlen(sess->bot_name),sizeof(buf)-strlen((char *)&buf)-1));
     strncat((char *) &buf, "\n",1);
     sender(c, (char *) &buf, strlen((char *) &buf));
 
@@ -372,12 +230,44 @@ int main( int argc, char *argv[] )
         debug("quitting...");
         again = 0;
         continue;
-      }
-      if(strncmp((char *) &buf, "fflush",6)==0) {
+      } else if(strncmp((char *) &buf, "fflush",6)==0) {
         debug("flushing...");
         fclose(fp);
-        fp = fopen(LOG_FILE,"a+");
+        fp = fopen(sess->log_name,"a+");
         continue;
+      } else if (strncmp((char *)&buf, "reload",6)==0) {
+        debug("reloading...");
+        extra_feature_handler = NULL;
+        handle_msg = NULL; 
+        parse_from_file = NULL;
+        if(lib_handle)
+          dlclose(lib_handle);
+        lib_handle = dlopen (lib_plus_cwd, RTLD_NOW);
+        if (!lib_handle) {
+          fputs (dlerror(), stderr);
+          printf("\nError: could not reload external libraries. Going into mute and deaf mode.\n");
+        } else {
+          printf("Loading library: %s\n", lib_plus_cwd);
+          debug("Loading library: %s\n", lib_plus_cwd);
+           
+          extra_feature_handler = dlsym(lib_handle, "extra_feature_handler");
+          handle_msg = dlsym(lib_handle, "handle_msg");
+          parse_from_file = dlsym(lib_handle, "parse_from_file");
+          
+             
+          if(parse_from_file != NULL) {
+            rewind(fp);
+            parse_from_file(fp);
+          }
+          //lib_handle = temp_lib_handle;
+        }
+        temp_lib_handle = NULL;
+        continue;
+
+      } else if(extra_feature_handler != NULL) {
+        if( extra_feature_handler( (char *) &buf,len)!=NULL) {
+          continue;
+        }
       }
       
       if((ret = sender(c, (char *) &buf, len))<1) break;
@@ -385,5 +275,9 @@ int main( int argc, char *argv[] )
     cleanup_and_quit(0);
     pthread_join(lth,NULL);
     ssl_disconnect(c);
+    if(sess)
+      free_sess(sess);
+    if(lib_handle)
+      dlclose(lib_handle);
     return 0;
 }
