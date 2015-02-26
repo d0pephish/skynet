@@ -31,6 +31,8 @@ typedef struct {
 } irc_session_node;
 
 
+extern unsigned long long int id_tracker;
+extern struct word_node * word_list;
 
 
 int alive = 1;
@@ -47,7 +49,31 @@ void handle_CHAN_PRIVMSG(char *, char *, connection *);
 void * extra_feature_handler(char *, int);
 //FUNCTIONS
 void * extra_feature_handler(char * input, int len) {
-  return NULL;
+  int num;
+  char * str;
+  char * str2;
+  if(strncmp(input,"parse file ", 11)==0) {
+    str = input+11;
+    num = strlen(str);
+    if(num>0) {
+      if(strstr(str,"\n")!=NULL) *(str+num-1) = '\0';
+      FILE * new_fp;
+      if((new_fp = fopen(str, "r+")) != NULL) {
+        parse_from_file(new_fp); 
+        fclose(new_fp);
+        debug("%s parsed successfully", str);
+        printf("%s parsed successfully\n", str);
+      } else {
+        debug("error opening file %s",str);
+        printf("error opening file %s\nWill not load.",str);
+
+      }
+    }
+  return (void *) 1;
+  } else {
+    return NULL;
+  }
+  
 }
 
 void handle_INDV_PRIVMSG(char *msg, char *pos, connection * c) {
@@ -115,9 +141,9 @@ void handle_CHAN_PRIVMSG(char * msg, char * pos, connection * c) {
   debug("%s in channel: %s has msg: %s", (char *) &user, (char *) &chan, pos);
   if(strstr(pos,">>")==pos) {
     debug("User has submitted a message seed: %s",pos+2);
-    char * received_word = malloc(strlen(pos+2));
-    memset(received_word,0,strlen(pos+2));
-    memcpy(received_word,pos+2,strlen(pos+2)-1);
+    char * received_word = malloc(strlen(pos+2)+1);
+    memset(received_word,0,strlen(pos+2)+1);
+    memcpy(received_word,pos+2,strlen(pos+2));
     char * sentence = build_sentence(received_word,word_list);
 //    char * sentence = build_sentence(gen_random_word_from_tree(),word_list);
     int reply_len = strlen(sentence) + strlen(chan)+12;
@@ -157,7 +183,7 @@ void handle_msg(char * msg, connection * c, int len, FILE * extern_fp) {
  char * msg_ptr = msg;
  int pos = 0;
   while (*msg_ptr != '\0' && *msg_ptr != EOF && pos<sizeof(buf)) { 
-    if(*msg_ptr == '\n') {
+    if(*msg_ptr == '\n' || *msg_ptr == '\r') {
       *buf_ptr = '\0';
       parse_line((char *) &buf, c);
       buf_ptr = (char *) &buf;

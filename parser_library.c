@@ -23,8 +23,8 @@ int no_repeats = 1;           // do not repeat a word
 int buff_size = 250;
 char empty_error[] = "word not trained\n";
 //GLOBALS
-extern unsigned long long int id_tracker = 1;
-extern struct word_node * word_list = NULL;
+unsigned long long int id_tracker = 1;
+struct word_node * word_list = NULL;
 //STRUCTS
 typedef struct phrase_id_node phrase_id_node;
 typedef struct branch branch;
