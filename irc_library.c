@@ -177,12 +177,13 @@ void parse_line(char * msg, connection * c) {
 void handle_msg(char * msg, connection * c, int len, FILE * extern_fp) {
  fp = extern_fp;
  char buf[4096];
+ int buf_length = sizeof(buf);
  if(len<1) return;
  memset(&buf,0,4096);
  char * buf_ptr = (char *) &buf;
  char * msg_ptr = msg;
  int pos = 0;
-  while (*msg_ptr != '\0' && *msg_ptr != EOF && pos<sizeof(buf)) { 
+  while (*msg_ptr != '\0' && *msg_ptr != EOF && pos<buf_length-1) { 
     if(*msg_ptr == '\n' || *msg_ptr == '\r') {
       *buf_ptr = '\0';
       parse_line((char *) &buf, c);
@@ -194,5 +195,6 @@ void handle_msg(char * msg, connection * c, int len, FILE * extern_fp) {
       buf_ptr++;
       msg_ptr++;
     }  
-  }  
+  }
+  buf[buf_length] = '\0';  
 }

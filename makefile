@@ -4,7 +4,7 @@ all-noclean: module client standalone no-debug
 
 module: 
 	gcc -g -DNDEBUG -DNDEBUGFP -c -fPIC -o ailib.o irc_library.c
-	gcc -shared -fPIC -o ailib.so ailib.o -lc
+	gcc -g -shared -fPIC -o ailib.so ailib.o -lc
 
 client:
 	gcc -DNDEBUG -DNDEBUGFP -g irc_ssl_client.c -lpthread -lssl -lcrypto -ldl -o irc_main

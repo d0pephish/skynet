@@ -23,6 +23,7 @@
 
 
 int main(int argc, char * argv[]) {
+  init("",0);
   FILE *fp;
   char * word_seed = NULL;
   char * output;

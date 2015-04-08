@@ -31,6 +31,7 @@ typedef struct {
   char * server_name;
   char * bot_name;
   char * log_name;
+  char * settings_filename;
   FILE * log_fp;
   pthread_t * lth;
   int server_port; 
@@ -85,7 +86,7 @@ void local_handle_msg(char * msg, connection * c, int len) {
  char * buf_ptr = (char *) &buf;
  char * msg_ptr = msg;
  int pos = 0;
-  while (*msg_ptr != '\0' && *msg_ptr != EOF && pos<sizeof(buf)) { 
+  while (*msg_ptr != '\0' && *msg_ptr != EOF && pos<sizeof(buf)-1) { 
     if(*msg_ptr == '\n') {
       *buf_ptr = '\0';
       local_parse_line((char *) &buf, c);
@@ -140,10 +141,33 @@ void free_sess(irc_session_node * sess) {
   if(sess->server_name) free(sess->server_name);
   if(sess->bot_name) free(sess->bot_name);
   if(sess->log_name) free(sess->log_name);
+  if(sess->settings_filename) free(sess->settings_filename);
   free(sess);
 
   //TODO: fully impliment when you fully implement sessions
 }
+
+void * handle_settings_file(void * sess_in) {
+  FILE * settings_file;
+  irc_session_node * sess = (irc_session_node *) sess_in;
+  sleep(1);
+  if(sess->settings_filename) {
+    if((settings_file = fopen(sess->settings_filename, "r"))!=NULL) {
+      char settings_buf[1024];
+      int read_len = 1;
+      printf("sending this data:\n"); 
+      while(read_len != 0) {
+        memset((char *) &settings_buf, 0, 1024);
+        read_len = fread((char *) &settings_buf, sizeof(char), 1023, settings_file);
+        //printf("%s,%d",(char *) &settings_buf,read_len);
+        sender(sess->c, (char *) &settings_buf, read_len);
+        if(read_len<1023) break;
+      }
+      printf("--done sending settings file data.--\n");
+    }      
+  }
+  return (NULL);
+} 
 
 int main( int argc, char *argv[] )
 {
@@ -176,11 +200,16 @@ int main( int argc, char *argv[] )
     
     irc_session_node * sess = (irc_session_node *) malloc(sizeof(irc_session_node));
     memset(sess,0,sizeof(irc_session_node));
-    if(argc==5) {
+    if(argc==6 || argc==2) {
+      sess->settings_filename = copy_str(argv[argc-1]);
+    } else {  
+      sess->settings_filename = NULL;
+    }
+    if(argc>=5) {
       sess->server_name = copy_str(argv[1]);
       sess->server_port = atoi(argv[2]);
       sess->bot_name = copy_str(argv[3]);
-      sess->log_name = copy_str(argv[4]);  
+      sess->log_name = copy_str(argv[4]);
     } else {
       printf(
       "Run without arguments, run again with:\n" \
@@ -192,21 +221,26 @@ int main( int argc, char *argv[] )
       sess->log_name = (char *) copy_str((char *) &LOG_FILE);
     }
     printf("Running with:\nserver:\t\t\t%s\nport:\t\t\t%d\nlog file:\t\t%s\n",sess->server_name,sess->server_port,sess->log_name);
-    printf("\nPress enter to continue.");
-    getchar(); 
+    if(sess->settings_filename)
+      printf("settings:\t\t%s\n",sess->settings_filename);
+    printf("\nLaunching in 2 seconds...\n");
+    //getchar(); 
+    sleep(2);
     fp = fopen(sess->log_name,"a+");
     if(parse_from_file != NULL) parse_from_file(fp);
     int ret, len = -1;
     char buf[4096] = "";
     
-    pthread_t lth;
+    pthread_t lth,settings_thread;
 
     connection * c = ssl_connect(sess->server_name,sess->server_port);
+
+    sess->c = c;    
 
     signal(SIGINT,cleanup_and_quit);
 
     //begin client interactive prompt
-    
+     
     pthread_create(&lth,NULL, listener, (void *) c);
     
     int again = 1;
@@ -217,6 +251,8 @@ int main( int argc, char *argv[] )
     strncat((char*) &buf,sess->bot_name, min(strlen(sess->bot_name),sizeof(buf)-strlen((char *)&buf)-1));
     strncat((char *) &buf, "\n",1);
     sender(c, (char *) &buf, strlen((char *) &buf));
+
+    pthread_create(&settings_thread,NULL, handle_settings_file, (void *) sess);
 
     while( again ) {
       printf( "  Enter info to write to server:" );
@@ -234,6 +270,14 @@ int main( int argc, char *argv[] )
         debug("flushing...");
         fclose(fp);
         fp = fopen(sess->log_name,"a+");
+        continue;
+      } else if (strncmp((char *) &buf, "unload",6)==0) {
+        debug("unloading. use reload to reload dynamic libraries");
+        if(lib_handle)
+          dlclose(lib_handle); 
+        extra_feature_handler = NULL;
+        handle_msg= NULL;
+        parse_from_file = NULL;
         continue;
       } else if (strncmp((char *)&buf, "reload",6)==0) {
         debug("reloading...");
@@ -274,6 +318,7 @@ int main( int argc, char *argv[] )
     }
     cleanup_and_quit(0);
     pthread_join(lth,NULL);
+    pthread_join(settings_thread,NULL);
     ssl_disconnect(c);
     if(sess)
       free_sess(sess);
