@@ -21,7 +21,7 @@ int starting_branch_size = 4; // starting memory allocated to array for branches
 int minimum_score = 0;        // stop following branch if score gets below this value.
 int no_repeats = 0;           // do not repeat a word
 int buff_size = 250;
-char empty_error[] = "word not trained\n";
+char empty_error[] = "not trained\n";
 //GLOBALS
 unsigned long long int id_tracker = 1;
 struct word_node * word_list = NULL;
@@ -79,6 +79,7 @@ struct word_node * build_node(struct word *);
 struct word_node * insert_str_as_node(struct word **, struct word_node *, char *, int);
 void print_tree(struct word_node *);
 struct word * build_word(char *, int);
+char * strip_spaces(char *, int );
 //void prep_word_list(struct word_list *);
 void parse(char *);
 int valid_char(char);
@@ -104,7 +105,7 @@ void free_id_list(phrase_id_node *);
 void * init(char * input, int len) {
   char val[2] = ".";
   word_list = insert_str_as_node((struct word **) &end_word,word_list, (char *) &val,1);
-  if(find_word(".",word_list) == NULL) printf("can't find the word i just added you.\n"); 
+  if(find_word(".",word_list) == NULL) printf("can't find the word i just added for you.\n"); 
   printf("end word built: %s\n",end_word->value);
 }
 
@@ -427,23 +428,26 @@ struct sentence_word * process_sentence(char * input) {
       debug("word too big for buffer");
       break;
     }
-    if(( (*input_ptr) == ' ' && len>0 || *(input_ptr+1)==0x00)) {
-      if(*(input_ptr+1)==0x00) { 
+    if(( (*input_ptr) == ' ' || *(input_ptr+1)==0x00)) {
+      if(*(input_ptr+1)==0x00 && (*input_ptr) != ' ' ) {
         *buff_ptr = tolower((*input_ptr));
-        len++;
+        len++; 
       }
-      
-      cur = build_sentence_word((char *) &buff,len);
-      buff_ptr = (char *) &buff;
-      memset(buff_ptr,0,buff_size);  
-      len = 0;
-      if(prev!=NULL) prev->next = cur;
-      cur->prev = prev;
-      prev = cur; 
+      if(len>0) { 
+        cur = build_sentence_word((char *) &buff,len);
+        buff_ptr = (char *) &buff;
+        memset(buff_ptr,0,buff_size);  
+        len = 0;
+        if(prev!=NULL) prev->next = cur;
+        cur->prev = prev;
+        prev = cur; 
+      }
     } else {
-      len++;
-      *buff_ptr = tolower(*input_ptr);
-      buff_ptr++;
+      if((*input_ptr)!= ' ') {
+        len++;
+        *buff_ptr = tolower(*input_ptr);
+        buff_ptr++;
+      }
     }
     input_ptr++;
   }
@@ -464,6 +468,20 @@ char * copy_sentence(char * input) {
   memcpy(out,input,len);
   return out;
 }
+char * strip_spaces(char * str, int len) {
+  char * newstr;
+  int start = 0;
+  int fin = len-1;
+  while( (*(str+start)) == ' ') {
+    start++;
+  }
+  while( (*(str+fin)) == ' ' && fin >0) {
+    fin--;
+  }
+  newstr = calloc(1,fin-start+2);
+  memcpy(newstr, (str+start),fin-start+1);
+  return newstr;
+}
 char * build_sentence(char * input,struct word_node * orig_list) {
   debug("build_sentence(): %s,%p",input, orig_list);
   int len,i,j;
@@ -475,7 +493,8 @@ char * build_sentence(char * input,struct word_node * orig_list) {
   struct word * cur_word;
   struct word * temp;
   phrase_id_node * id_list = NULL;
-  struct sentence_word * seed_sentence = process_sentence(input);
+  char * stripped_input = strip_spaces(input, strlen(input));
+  struct sentence_word * seed_sentence = process_sentence(stripped_input);
   if(seed_sentence == NULL) {
     debug("seed sentence is null");
     destroy_tree(cur_list);
@@ -522,13 +541,14 @@ char * build_sentence(char * input,struct word_node * orig_list) {
     debug("id_list is %p",id_list);
     debug("walk_link using word %s",starting_word->value);
     char * pre_sentence = walk_link(starting_word,id_list);
-    len = strlen(pre_sentence)+strlen(input)+2;
+    len = strlen(pre_sentence)+strlen(stripped_input)+2;
     new_sentence = malloc(len);
     memset(new_sentence,0,len);
-    sprintf(new_sentence,"%s%s\n",input,pre_sentence);
+    sprintf(new_sentence,"%s%s\n",stripped_input,pre_sentence);
     free(pre_sentence);
     free_id_list(id_list);
   }
+  free(stripped_input);
   destroy_tree(cur_list);
   free_sentence_word(seed_sentence);
   return new_sentence;
@@ -698,7 +718,7 @@ void link_words(struct word * prev, struct word * cur) {
   cur->prev_index++;
 }
 struct word * build_word(char * in, int len) {
-  debug("build_Word %s, %d", in, len);
+//  debug("build_Word %s, %d", in, len);
   if(len==0 || strlen(in)==0) {
     debug("\n\n\n\n\n\n~~~~~~~!!!!!!!!!!!~~~~~~~~~\n\n\n\n\n\n");
   }

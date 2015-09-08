@@ -18,14 +18,22 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
+#include "irc_structs.h"
+
 #define DYN_LIB "/ailib.so"
 #define SERVER_PORT 6697
 #define SERVER_NAME "oxiii.net"
 #define BOT_NAME "skynet"
 #define LOG_FILE "ircbot.logs"
 
-//TO DO: wrap context in a struct so i only have to pass one object around rather than a ton or use globals.
+/*
 
+This is the IRC bubba that hangs out on IRC all of the time. It has some basic functionality and loads the actual bot modules into memory and executes them. allows for patching without join/quits in channel.
+
+*/
+
+//TO DO: wrap context in a struct so i only have to pass one object around rather than a ton or use globals.
+/*
 typedef struct {
   connection * c;
   char * server_name;
@@ -36,12 +44,12 @@ typedef struct {
   pthread_t * lth;
   int server_port; 
 } irc_session_node;
-
+*/
 
 
 
 int alive = 1;
-void (*handle_msg)(char*, connection *, int, FILE *);
+void (*handle_msg)(char*, irc_session_node *, int, FILE *);
 void *(*extra_feature_handler)(char *, int);
 void (*parse_from_file)(FILE *);
 FILE * fp;
@@ -49,9 +57,9 @@ FILE * fp;
 
 
 //PROTOTYPES
-void local_parse_line(char *, connection *);
+void local_parse_line(char *, irc_session_node *);
 void *listener(void *);
-void local_handle_msg(char *, connection *, int);
+void local_handle_msg(char *, irc_session_node *, int);
 
 //FUNCTIONS
 
@@ -71,15 +79,15 @@ void local_handle_PING(char * msg, char * pos, connection * c) {
   sender(c, (char *) &response, strlen(response));
 }
 
-void local_parse_line(char * msg, connection * c) {
+void local_parse_line(char * msg, irc_session_node * sess) {
   //debug( "got line: %s",msg);
   char * pos = NULL;
   if((pos= strstr(msg, "PING")) !=NULL) {
-    local_handle_PING(msg,pos,c);
+    local_handle_PING(msg,pos,sess->c);
   } 
 }
 
-void local_handle_msg(char * msg, connection * c, int len) {
+void local_handle_msg(char * msg, irc_session_node * sess, int len) {
  char buf[4096];
  if(len<1) return;
  memset(&buf,0,4096);
@@ -89,7 +97,7 @@ void local_handle_msg(char * msg, connection * c, int len) {
   while (*msg_ptr != '\0' && *msg_ptr != EOF && pos<sizeof(buf)-1) { 
     if(*msg_ptr == '\n') {
       *buf_ptr = '\0';
-      local_parse_line((char *) &buf, c);
+      local_parse_line((char *) &buf, sess);
       buf_ptr = (char *) &buf;
       msg_ptr++;
     } else {
@@ -100,7 +108,7 @@ void local_handle_msg(char * msg, connection * c, int len) {
     }  
   }  
 }
-void *listener(void * c) {
+void *listener(void * sess) {
       
       char * data = NULL;
       int len = -1;
@@ -108,7 +116,7 @@ void *listener(void * c) {
       do
       {
           if(!alive) break;
-          len = ssl_read(c, &data);
+          len = ssl_read(((irc_session_node *) sess)->c, &data);
           
           if(len<1) {
             debug("socket likely closed. quitting");
@@ -117,9 +125,9 @@ void *listener(void * c) {
           printf( " %d bytes read:\n%s\n", len, data );
           debug( " %d bytes read\n%s", len, data );
           if(handle_msg!=NULL) 
-            handle_msg(data, (connection *) c, len,fp); 
+            handle_msg(data, (irc_session_node *) sess, len,fp); 
           else 
-            local_handle_msg( data, (connection *) c, len);
+            local_handle_msg( data, (irc_session_node *) sess, len);
           
           free(data);
       }
@@ -241,7 +249,7 @@ int main( int argc, char *argv[] )
 
     //begin client interactive prompt
      
-    pthread_create(&lth,NULL, listener, (void *) c);
+    pthread_create(&lth,NULL, listener, (void *) sess);
     
     int again = 1;
     
