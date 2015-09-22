@@ -158,7 +158,7 @@ void free_sess(irc_session_node * sess) {
 void * handle_settings_file(void * sess_in) {
   FILE * settings_file;
   irc_session_node * sess = (irc_session_node *) sess_in;
-  sleep(1);
+  sleep(3);
   if(sess->settings_filename) {
     if((settings_file = fopen(sess->settings_filename, "r"))!=NULL) {
       char settings_buf[1024];
@@ -253,11 +253,13 @@ int main( int argc, char *argv[] )
     
     int again = 1;
     
-    strncat((char *) &buf,"USER ",5);
-    strncat((char*) &buf,sess->bot_name, min(strlen(sess->bot_name),sizeof(buf)-strlen((char *)&buf)-1));
-    strncat((char *) &buf," * 0 :jianmin's irc bot\nNICK ",sizeof(buf)-strlen((char *) &buf)-1);
+    strncat((char *) &buf,"NICK ",sizeof(buf)-strlen((char *) &buf)-1);
     strncat((char*) &buf,sess->bot_name, min(strlen(sess->bot_name),sizeof(buf)-strlen((char *)&buf)-1));
     strncat((char *) &buf, "\n",1);
+    
+    strncat((char *) &buf,"USER ",5);
+    strncat((char*) &buf,sess->bot_name, min(strlen(sess->bot_name),sizeof(buf)-strlen((char *)&buf)-1));
+    strncat((char *) &buf," * 0 :jianmin's irc bot\n",sizeof(buf)-strlen((char *) &buf)-1);
     sender(c, (char *) &buf, strlen((char *) &buf));
 
     pthread_create(&settings_thread,NULL, handle_settings_file, (void *) sess);
