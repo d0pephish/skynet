@@ -1,10 +1,14 @@
-all: module client standalone no-debug clean
+all: mkbins module client standalone no-debug clean
 
 all-noclean: module client standalone no-debug	
+
+mkbins:
+	mkdir -p bins/
 
 module: 
 	gcc -g -DNDEBUG -DNDEBUGFP -c -fPIC -o ailib.o irc_library.c
 	gcc -g -shared -fPIC -o bins/ailib.so ailib.o -lc
+
 
 client:
 	gcc -DNDEBUG -DNDEBUGFP -g irc_ssl_client.c -lpthread -lssl -lcrypto -ldl -o bins/irc_main
