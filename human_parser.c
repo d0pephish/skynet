@@ -8,8 +8,8 @@
 */
 #define BUFFSIZE 4096
 
-#define NONTERM 1;
-#define TERM 2;
+#define NONTERM	1
+#define TERM	2
 /*
   Structs:
     p_term_n  -> parser terminal node
@@ -45,15 +45,13 @@ struct p_nterm
 typedef struct p_nterm p_nterm;
 typedef struct 
 {
-  char * value;
+  char * name;
   uint32_t len;
   p_nterm * nterms;
 } p_gram;
 
 struct p_gram_w 
 {
-  char * name;
-  uint32_t len;
   p_gram * gram;
   char * value;
   uint32_t v_len;
@@ -64,40 +62,80 @@ typedef struct p_gram_w p_gram_w;
 
 /* prototypes */
 
-p_gram_w * parse_grammar(char * g);
+p_gram * parse_grammar(char * g);
 
 /* functions */
 
-p_gram_w * create_grammar() 
+p_gram * create_grammar() 
 {
-  p_gram_w * g = ( p_gram_w * ) calloc( 1, sizeof(p_gram_w) );
+  p_gram * g = ( p_gram * ) calloc( 1, sizeof(p_gram) );
   g->name = NULL;
   g->len = 0;
-  g->gram = NULL;
-  g->next = NULL;
-  g->prev = NULL;
+  g->nterms = NULL;
   return g;
 }
 
-void parse_grammer_line( char * line, uint32_t len, p_gram_w * g ) 
+char * clone_str( char * str, uint32_t len ) 
 {
+  if( len == 0 ) 
+  {
+    len = strlen( str );
+  }
+  char * ret = calloc( 1, len );
+  memcpy( ret, str, len );
+  return ret;
+}
+
+char * build_p_gram( char * sym, uint32_t len) 
+{
+  p_gram * new_p_gram = calloc( 1, sizeof(p_gram) );
+  new_p_gram->name    = sym;
+  new_p_gram->len     = len;
+  new_p_gram->nterms  = NULL;
+  return new_p_gram;
+}
+
+
+
+p_nterm * parse_grammer_line( char * line, uint32_t len, p_nterm * p_nterm_list ) 
+{
+
   uint32_t i = 0;
   uint8_t type = TERM;
+
+  p_nterm * cur = calloc( 1, sizeof( p_nterm ) );  
+
   char word[BUFFSIZE]; 
+
+
   char * line_value = calloc( 1, len );
   memcpy( line_value, line, len );
    
-  g->v_len = len;
-  g->value = line_value;
-  
+  cur->len = len;
+  cur->value = line_value;
+ 
+	 
 
   while ( (*line) != '\0' )
   {
     switch ( (*line) )
     {
       case '=':
-        break;
+	word[i] = '\0';
+
+	cur->name = clone_str( &word , i);
+	cur->len = i;
+
+	i = 0;
+	break;
       case ',':
+	if( type == TERM ) 
+	{
+
+	} else if ( type == NONTERM )
+	{
+
+	}
         //should set type to TERM after 
         break;
       case '{':
@@ -105,21 +143,21 @@ void parse_grammer_line( char * line, uint32_t len, p_gram_w * g )
         break;
         /// change to serach for } and finish. 
       case '}':
-
-        type = TERM;
         break;
       default :
+	buff[i] = (*line);
+	i++;
         break;
     }
     line++;
   }
-
+  return cur;
 }
 
-p_gram_w * parse_grammar( char * g_str ) 
+p_gram * parse_grammar( char * g_str ) 
 {
-  p_gram_w * g = create_grammar();
-  p_gram_w * g_ptr = g;
+  p_gram * g = create_grammar();
+  p_gram * g_ptr = g;
   char *g_str_ptr = g_str;
  
   char buff[BUFFSIZE];
