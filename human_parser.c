@@ -7,6 +7,9 @@
   definitions
 */
 #define BUFFSIZE 4096
+
+#define NONTERM 1;
+#define TERM 2;
 /*
   Structs:
     p_term_n  -> parser terminal node
@@ -67,7 +70,7 @@ p_gram_w * parse_grammar(char * g);
 
 p_gram_w * create_grammar() 
 {
-  p_gram_w * g = ( p_gram_w * ) calloc(1, sizeof(p_gram_w) );
+  p_gram_w * g = ( p_gram_w * ) calloc( 1, sizeof(p_gram_w) );
   g->name = NULL;
   g->len = 0;
   g->gram = NULL;
@@ -76,12 +79,49 @@ p_gram_w * create_grammar()
   return g;
 }
 
-p_gram_w * parse_grammar(char * g_str) 
+void parse_grammer_line( char * line, uint32_t len, p_gram_w * g ) 
+{
+  uint32_t i = 0;
+  uint8_t type = TERM;
+  char word[BUFFSIZE]; 
+  char * line_value = calloc( 1, len );
+  memcpy( line_value, line, len );
+   
+  g->v_len = len;
+  g->value = line_value;
+  
+
+  while ( (*line) != '\0' )
+  {
+    switch ( (*line) )
+    {
+      case '=':
+        break;
+      case ',':
+        //should set type to TERM after 
+        break;
+      case '{':
+        type = NONTERM;
+        break;
+        /// change to serach for } and finish. 
+      case '}':
+
+        type = TERM;
+        break;
+      default :
+        break;
+    }
+    line++;
+  }
+
+}
+
+p_gram_w * parse_grammar( char * g_str ) 
 {
   p_gram_w * g = create_grammar();
   p_gram_w * g_ptr = g;
   char *g_str_ptr = g_str;
-  
+ 
   char buff[BUFFSIZE];
   uint32_t buff_i = 0;
   memset(&buff, 0, BUFFSIZE);
@@ -93,12 +133,12 @@ p_gram_w * parse_grammar(char * g_str)
     {
       buff[buff_i] = '\0';
       // parse line
-      printf("%s\n",buff); 
-      memset(&buff, 0, BUFFSIZE);
+      printf( "%s\n", buff ); 
+      memset( &buff, 0, BUFFSIZE );
       buff_i = 0;
       
     } else {
-      if(buff_i >=BUFFSIZE)
+      if( buff_i >=BUFFSIZE )
       {
         debug("grammar too big. increase BUFFSIZE or shrink grammar.");
         break;
@@ -108,7 +148,7 @@ p_gram_w * parse_grammar(char * g_str)
     }
     g_str_ptr++;
   }
-  printf("%s",buff);
+  printf( "%s", buff );
   return g;
 }
 
@@ -118,6 +158,6 @@ int main()
                    "noun={all}\n" \
                    "accept={noun}{verb}";
 
-  parse_grammar(grammar);
+  parse_grammar( grammar );
 
 }
