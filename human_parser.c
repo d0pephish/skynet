@@ -24,9 +24,10 @@ typedef struct
   char * value;
   uint32_t len;
 } p_term;
+
 struct p_term_n 
 {
-  p_term t;
+  p_term * t;
   struct p_term_n * left;
   struct p_term_n * right;
   struct p_term_n * next;
@@ -63,6 +64,15 @@ typedef struct p_gram_w p_gram_w;
 /* prototypes */
 
 p_gram * parse_grammar(char * g);
+p_nterm * parse_grammer_line( char * , uint32_t , p_nterm *  ); 
+
+
+p_term_n * create_p_term_n( char * , uint32_t ); 
+p_gram * build_p_gram( char * , uint32_t ); 
+
+char * clone_str( char * , uint32_t ); 
+
+void free_p_term(p_term * );
 
 /* functions */
 
@@ -75,6 +85,27 @@ p_gram * create_grammar()
   return g;
 }
 
+p_term_n * create_p_term_n( char * val, uint32_t len) 
+{
+  p_term_n * new_p_term_n = (p_term_n *) calloc(1, sizeof(p_term_n) ); 
+  new_p_term_n->t = (p_term *) calloc( 1, sizeof(p_term) );
+  new_p_term_n->t->value = val;
+  new_p_term_n->t->len = len;
+  new_p_term_n->next = NULL;
+  new_p_term_n->left = NULL;
+  new_p_term_n->right = NULL;
+  
+  return new_p_term_n;
+}
+
+void free_p_term_n(p_term_n * old_p_term_n) 
+{
+  free( old_p_term_n->t->value );
+  free( old_p_term_n->t );
+  free( old_p_term_n );
+} 
+
+
 char * clone_str( char * str, uint32_t len ) 
 {
   if( len == 0 ) 
@@ -86,7 +117,7 @@ char * clone_str( char * str, uint32_t len )
   return ret;
 }
 
-char * build_p_gram( char * sym, uint32_t len) 
+p_gram * build_p_gram( char * sym, uint32_t len) 
 {
   p_gram * new_p_gram = calloc( 1, sizeof(p_gram) );
   new_p_gram->name    = sym;
@@ -121,21 +152,21 @@ p_nterm * parse_grammer_line( char * line, uint32_t len, p_nterm * p_nterm_list 
     switch ( (*line) )
     {
       case '=':
-	word[i] = '\0';
+	      word[i] = '\0';
 
-	cur->name = clone_str( &word , i);
-	cur->len = i;
+	      cur->name = clone_str( (char *) word , i);
+	      cur->len = i;
 
-	i = 0;
-	break;
+	      i = 0;
+	      break;
       case ',':
-	if( type == TERM ) 
-	{
+	      if( type == TERM ) 
+	      { // build terminal, create pointer to it. 
+          
+	      } else if ( type == NONTERM )
+	      { // find non-terminal in list, create pointer to it
 
-	} else if ( type == NONTERM )
-	{
-
-	}
+	      }
         //should set type to TERM after 
         break;
       case '{':
@@ -145,8 +176,8 @@ p_nterm * parse_grammer_line( char * line, uint32_t len, p_nterm * p_nterm_list 
       case '}':
         break;
       default :
-	buff[i] = (*line);
-	i++;
+        word[i] = (*line);
+        i++;
         break;
     }
     line++;
