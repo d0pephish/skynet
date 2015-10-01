@@ -8,100 +8,100 @@
 */
 #define BUFFSIZE 4096
 
-#define NONTERM	1
+#define NONTERM 1
 #define TERM	2
 /*
   Structs:
-    p_term_n  -> parser terminal node
-    p_term    -> parser terminal
-    p_nterm   -> parser non-terminal [is node]
-    p_gram    -> parser grammar
-    p_gram_w  -> parser grammar wrapper
+    term_node  -> parser terminal node
+    term    -> parser terminal
+    non_term   -> parser non-terminal [is node]
+    gram    -> parser grammar
+    gram_w  -> parser grammar wrapper
 */
 
 typedef struct
 {
   char * value;
   uint32_t len;
-} p_term;
+} term;
 
-struct p_term_n 
+struct term_node 
 {
-  p_term * t;
-  struct p_term_n * left;
-  struct p_term_n * right;
-  struct p_term_n * next;
+  term * t;
+  struct term_node * left;
+  struct term_node * right;
+  struct term_node * next;
 };
-typedef struct p_term_n p_term_n;
+typedef struct term_node term_node;
 
-struct p_nterm 
+struct non_term 
 {
   char * name;
   uint32_t n_len;
   char * value;
   uint32_t len;
-  p_term_n * list;
-  struct p_nterm * prev;
+  term_node * list;
+  struct non_term * prev;
 };
-typedef struct p_nterm p_nterm;
+typedef struct non_term non_term;
 typedef struct 
 {
   char * name;
   uint32_t len;
-  p_nterm * nterms;
-} p_gram;
+  non_term * nterms;
+} gram;
 
-struct p_gram_w 
+struct gram_w 
 {
-  p_gram * gram;
+  gram * gram;
   char * value;
   uint32_t v_len;
-  struct p_gram_w * next;
-  struct p_gram_w * prev;
+  struct gram_w * next;
+  struct gram_w * prev;
 };
-typedef struct p_gram_w p_gram_w;
+typedef struct gram_w gram_w;
 
 /* prototypes */
 
-p_gram * parse_grammar(char * g);
-p_nterm * parse_grammer_line( char * , uint32_t , p_nterm *  ); 
+gram * parse_grammar(char * g);
+non_term * parse_grammer_line( char * , uint32_t , non_term *  ); 
 
 
-p_term_n * create_p_term_n( char * , uint32_t ); 
-p_gram * build_p_gram( char * , uint32_t ); 
+term_node * create_term_node( char * , uint32_t ); 
+gram * build_gram( char * , uint32_t ); 
 char * clone_str( char * , uint32_t ); 
 
-void free_p_term(p_term * );
+void free_term(term * );
 
 /* functions */
 
-p_gram * create_grammar() 
+gram * create_grammar() 
 {
-  p_gram * g = ( p_gram * ) calloc( 1, sizeof(p_gram) );
+  gram * g = ( gram * ) calloc( 1, sizeof(gram) );
   g->name = NULL;
   g->len = 0;
   g->nterms = NULL;
   return g;
 }
 
-p_term_n * create_p_term_n( char * val, uint32_t len) 
+term_node * create_term_node( char * val, uint32_t len) 
 {
-  p_term_n * new_p_term_n = (p_term_n *) calloc(1, sizeof(p_term_n) ); 
-  new_p_term_n->t = (p_term *) calloc( 1, sizeof(p_term) );
-  new_p_term_n->t->value = val;
-  new_p_term_n->t->len = len;
-  new_p_term_n->next = NULL;
-  new_p_term_n->left = NULL;
-  new_p_term_n->right = NULL;
+  term_node * new_term_node = (term_node *) calloc(1, sizeof(term_node) ); 
+  new_term_node->t = (term *) calloc( 1, sizeof(term) );
+  new_term_node->t->value = val;
+  new_term_node->t->len = len;
+  new_term_node->next = NULL;
+  new_term_node->left = NULL;
+  new_term_node->right = NULL;
   
-  return new_p_term_n;
+  return new_term_node;
 }
 
-void free_p_term_n(p_term_n * old_p_term_n) 
+void free_term_node(term_node * old_term_node) 
 {
-  free( old_p_term_n->t->value );
-  free( old_p_term_n->t );
-  free( old_p_term_n );
+  free( old_term_node->t->value );
+  free( old_term_node->t );
+  free( old_term_node );
 } 
 
 
@@ -115,43 +115,43 @@ char * clone_str( char * str, uint32_t len )
   memcpy( ret, str, len );
   return ret;
 }
-p_nterm * build_p_nterm_single(char * name, uint32_t len)
+non_term * build_non_term_single(char * name, uint32_t len)
 {
-  p_nterm * new_p_nterm = (p_nterm *) calloc( 1, sizeof(p_nterm) );
-  new_p_nterm->name = name;
-  new_p_nterm->n_len = len;
-  new_p_nterm->value = NULL;
-  new_p_nterm->len = 0;
-  new_p_nterm->prev = NULL;
-  new_p_nterm->list = create_p_term_n( name , len ); 
-  return new_p_nterm;
+  non_term * new_non_term = (non_term *) calloc( 1, sizeof(non_term) );
+  new_non_term->name = name;
+  new_non_term->n_len = len;
+  new_non_term->value = NULL;
+  new_non_term->len = 0;
+  new_non_term->prev = NULL;
+  new_non_term->list = create_term_node( name , len ); 
+  return new_non_term;
 }
-p_gram * build_p_gram( char * sym, uint32_t len) 
+gram * build_gram( char * sym, uint32_t len) 
 {
-  p_gram * new_p_gram = calloc( 1, sizeof(p_gram) );
-  new_p_gram->name    = sym;
-  new_p_gram->len     = len;
-  p_term_n * create_p_term_n( char * , uint32_t ); 
-  p_gram * build_p_gram( char * , uint32_t ); 
-  new_p_gram->nterms  = NULL;
-  return new_p_gram;
+  gram * new_gram = calloc( 1, sizeof(gram) );
+  new_gram->name    = sym;
+  new_gram->len     = len;
+  term_node * create_term_node( char * , uint32_t ); 
+  gram * build_gram( char * , uint32_t ); 
+  new_gram->nterms  = NULL;
+  return new_gram;
 }
-p_term_n * find_nterm_in_list(p_nterm * haystack, char * needle, uint32_t needle_len) {
+non_term * find_nterm_in_list(non_term * haystack, char * needle, uint32_t needle_len) {
   if (haystack == NULL)
     return NULL;
   uint32_t len = max(needle_len, haystack->len);
-  int cmp_res = strncmp(needle, haystack->name);
+  int cmp_res = strncmp(needle, haystack->name, len);
   
   if(cmp_res == 0 ) 
   {
     return haystack;
-  } else find_nterm_in_list( haystack->prev, needle, needle_len );
+  } else return find_nterm_in_list( haystack->prev, needle, needle_len );
 }
-void insert_term_n_into_list( p_term_n * list, p_term_n * term ) 
+void insert_term_node_into_list( term_node * list, term_node * term ) 
 {
   if (list == NULL) 
     list = term;
-  if (list->t == NULL || term->t = NULL ) 
+  if (list->t == NULL || term->t == NULL ) 
   {
     debug("empty t. this should not happen. check yourself.");
     return;  
@@ -171,23 +171,23 @@ void insert_term_n_into_list( p_term_n * list, p_term_n * term )
     if ( list->left == NULL ) 
       list->left == term;
     else 
-      insert_term_n_into_list( list->left, term ):
+      insert_term_node_into_list( list->left, term );
   } else {
     if ( list->right == NULL )
       list->right == term;
     else 
-      insert_term_n_into_list( list->right, term );
+      insert_term_node_into_list( list->right, term );
   }
 }
 
-p_nterm * parse_grammer_line( char * line, uint32_t len, p_nterm * p_nterm_list ) 
+non_term * parse_grammer_line( char * line, uint32_t len, non_term * non_term_list ) 
 {
 
   uint32_t i = 0;
   uint8_t type = TERM;
-  p_term_n * cur_p_term_n;
-  p_nterm * cur p_nterm;
-  p_nterm * cur = calloc( 1, sizeof( p_nterm ) );  
+  term_node * cur_term_node;
+  non_term * cur_non_term;
+  non_term * cur = calloc( 1, sizeof( non_term ) );  
   
   char word[BUFFSIZE]; 
 
@@ -216,13 +216,13 @@ p_nterm * parse_grammer_line( char * line, uint32_t len, p_nterm * p_nterm_list 
 	      word[i] = '\0';
 	      if( type == TERM ) 
 	      { // build terminal, create pointer to it. 
-          cur_p_term_n = create_p_term_n( (char *) word, i);          
-          insert_term_n_into_list( cur->list, cur_p_term_n );
+          cur_term_node = create_term_node( (char *) word, i);          
+          insert_term_node_into_list( cur->list, cur_term_node );
 	      } else if ( type == NONTERM )
 	      { // find non-terminal in list, create pointer to it, or create new
-          cur_p_nterm = find_nterm_in_list(p_nterm_list, word,i); 
-          if( cur_p_nterm == NULL ) {
-            cur_p_term_n = build_p_nterm_single( clone_str ( (char *) word, i ) ;
+          cur_non_term = find_nterm_in_list(non_term_list, word,i); 
+          if( cur_non_term == NULL ) {
+            cur_non_term = build_non_term_single( clone_str ( (char *) word, i), i ) ;
           }           
 	      }
         
@@ -245,10 +245,10 @@ p_nterm * parse_grammer_line( char * line, uint32_t len, p_nterm * p_nterm_list 
   return cur;
 }
 
-p_gram * parse_grammar( char * g_str ) 
+gram * parse_grammar( char * g_str ) 
 {
-  p_gram * g = create_grammar();
-  p_gram * g_ptr = g;
+  gram * g = create_grammar();
+  gram * g_ptr = g;
   char *g_str_ptr = g_str;
  
   char buff[BUFFSIZE];
