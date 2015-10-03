@@ -46,10 +46,19 @@ struct non_term
 typedef struct non_term non_term;
 typedef struct 
 {
-  char * name;
-  uint32_t len;
+  char * value;
+  uint32_t value_len;
   non_term * nterms;
+  gram_list * accept;
 } gram;
+
+struct gram_list 
+{
+  uint8_t type;
+  struct gram_list * next;
+  non_term * nt;
+};
+typedef struct gram_list gram_list;
 
 struct gram_w 
 {
@@ -60,11 +69,10 @@ struct gram_w
   struct gram_w * prev;
 };
 typedef struct gram_w gram_w;
-
 /* prototypes */
 
 gram * parse_grammar(char * g);
-non_term * parse_grammer_line( char * , uint32_t , non_term *  ); 
+non_term * parse_grammar_line( char * , uint32_t , non_term *  ); 
 
 
 term_node * create_term_node( char * , uint32_t ); 
@@ -147,11 +155,23 @@ non_term * find_nterm_in_list(non_term * haystack, char * needle, uint32_t needl
     return haystack;
   } else return find_nterm_in_list( haystack->prev, needle, needle_len );
 }
+void insert_non_term_into_list( non_term ** list, non_term * new ) 
+{
+  non_term * temp;
+  if ( *list == NULL) 
+    *list=new;
+  else
+  {
+    temp = *list;
+    *list = new;
+    (*list)->prev = temp;
+  }
+}
 void insert_term_node_into_list( term_node * list, term_node * term ) 
 {
   if (list == NULL) 
     list = term;
-  if (list->t == NULL || term->t == NULL ) 
+  if ( list->t == NULL || term->t == NULL ) 
   {
     debug("empty t. this should not happen. check yourself.");
     return;  
@@ -180,9 +200,8 @@ void insert_term_node_into_list( term_node * list, term_node * term )
   }
 }
 
-non_term * parse_grammer_line( char * line, uint32_t len, non_term * non_term_list ) 
+non_term * parse_grammar_line( char * line, uint32_t len, non_term * non_term_list ) 
 {
-
   uint32_t i = 0;
   uint8_t type = TERM;
   term_node * cur_term_node;
@@ -223,7 +242,11 @@ non_term * parse_grammer_line( char * line, uint32_t len, non_term * non_term_li
           cur_non_term = find_nterm_in_list(non_term_list, word,i); 
           if( cur_non_term == NULL ) {
             cur_non_term = build_non_term_single( clone_str ( (char *) word, i), i ) ;
+            // add non-terminal to list
+            insert_non_term_into_list( &non_term_list, cur_non_term); 
           }           
+          // insert into local list
+          insert_term_node_into_list( cur->list, cur_term_node );
 	      }
         
         i = 0; 
@@ -250,7 +273,7 @@ gram * parse_grammar( char * g_str )
   gram * g = create_grammar();
   gram * g_ptr = g;
   char *g_str_ptr = g_str;
- 
+  
   char buff[BUFFSIZE];
   uint32_t buff_i = 0;
   memset(&buff, 0, BUFFSIZE);
@@ -261,6 +284,7 @@ gram * parse_grammar( char * g_str )
     if ( (*g_str_ptr) == '\n' )
     {
       buff[buff_i] = '\0';
+      parse_grammar_line( buff, buff_i, g_ptr->nterms ); 
       // parse line
       printf( "%s\n", buff ); 
       memset( &buff, 0, BUFFSIZE );
