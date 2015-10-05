@@ -10,6 +10,7 @@
 
 #define NONTERM 1
 #define TERM	2
+#define DELIM '`'
 /*
   Structs:
     term_node  -> parser terminal node
@@ -73,20 +74,44 @@ struct gram_w
   struct gram_w * prev;
 };
 typedef struct gram_w gram_w;
+
+struct word 
+{
+  char * val;
+  uint32_t len;
+  char * type; 
+  char * type_len;
+  struct word * prev;
+  struct word * next;
+};
+typedef struct word word;
 /* prototypes */
 
 gram * parse_grammar(char * g);
-char * parse_grammar_line( char * , uint32_t , non_term **  ); 
+non_term * parse_grammar_line( char * , uint32_t , non_term **  ); 
+void populate_grammar_accept(gram *);
+word * string_to_word_list( char * );
 
+term_node * insert_term_node_into_list( term_node *, term_node *);
+void insert_non_term_into_list( non_term ** , non_term * );
+void insert_non_term_as_offspring( non_term * , non_term *);
+
+non_term * find_non_term_in_list (non_term * , char *, uint32_t);
 
 term_node * build_term_node( char * , uint32_t ); 
 gram * build_gram( char * , uint32_t ); 
+non_term * build_non_term_single( char *, uint32_t, uint8_t);
 char * clone_str( char * , uint32_t ); 
 
 void free_term(term * );
+void free_term_node(term_node *);
+void free_gram_list(gram_list *);
 
 void debug_non_term(non_term *); 
-
+void debug_grammar(gram *);
+void debug_gram_list(gram_list *);
+void debug_non_term_offspring(non_term * );
+void debug_term_node(term_node *);
 /* functions */
 
 gram * create_grammar() 
@@ -120,7 +145,66 @@ void free_term_node(term_node * old_term_node)
   free( old_term_node->t );
   free( old_term_node );
 } 
+word * build_word(char * str, uint32_t len) {
+  word * new_word = (word *) calloc(1,sizeof(word));
+  new_word->val = clone_str ( str, len );
+  new_word->len = len;
+  new_word->type = NULL;
+  new_word->type_len = 0;
+  new_word->next = NULL;
+  new_word->prev = NULL;
+  return new_word;
+}
+void insert_word_in_list(word ** list, word * w) 
+{
+  if ( *list == NULL ) 
+  {
+    *list = w;
+    return;
+  }
+  word * prev = NULL; 
+  word * pointer = *list;
+  
+  while (pointer->next != NULL) 
+  {
+    prev = pointer;
+    pointer = pointer->next;
+  }
+  pointer->next = w;
+  pointer->prev = prev;
 
+}
+
+word * string_to_word_list(char * str) {
+  
+  word * list;  
+  char * c = str;
+  char buff[BUFFSIZE];
+  uint32_t i;
+  while ( (*c) != '\0' ) 
+  {
+    switch ( (*c) ) 
+    {
+      case ' ':
+        if(i>0)
+        {
+          
+        } 
+        break;
+
+
+    }
+
+    c++;
+    if(i>=BUFFSIZE)
+    {
+      debug("buffer exceeded. stopping");
+      return NULL;
+    }
+  }
+
+
+}
 
 char * clone_str( char * str, uint32_t len ) 
 {
@@ -238,7 +322,7 @@ term_node * insert_term_node_into_list( term_node * list, term_node * term )
   return list;
 }
 
-char * parse_grammar_line( char * line, uint32_t len, non_term ** non_term_list ) 
+non_term * parse_grammar_line( char * line, uint32_t len, non_term ** non_term_list ) 
 {
   debug("parse_grammar_line(%s,%d,%p)",line,len,non_term_list);
   uint32_t i = 0;
@@ -273,12 +357,15 @@ char * parse_grammar_line( char * line, uint32_t len, non_term ** non_term_list 
 	      this_non_term->n_len = i;
 	      i = 0;
 	      break;
+      case '{':
       case '}':
         type = NONTERM;
-      case ',':
+        if( i <=1 )
+          break;
+      case DELIM:
+        if ( i < 1  )
+          break;
 	      word[i] = '\0';
-      //TODO: fix the term vs. nonterm issue.
-      // every line should be its own nonterm, and it should be made up of a list of nonterm elements that either point to other nonterms or point to list of terms.
 	      if( type == TERM ) 
         {
           this_non_term->type = type;
@@ -301,9 +388,6 @@ char * parse_grammar_line( char * line, uint32_t len, non_term ** non_term_list 
         i = 0; 
         //should set type to TERM after 
         break;
-      case '{':
-        type = NONTERM;
-        break;
       default :
         word[i] = (*line);
         i++;
@@ -313,7 +397,7 @@ char * parse_grammar_line( char * line, uint32_t len, non_term ** non_term_list 
   }
   debug("done building this_non_term, adding it ot list");  
   insert_non_term_into_list( non_term_list, this_non_term);
-  return this_non_term->name;
+  return this_non_term;
 }
 
 gram * parse_grammar( char * g_str ) 
@@ -323,6 +407,7 @@ gram * parse_grammar( char * g_str )
   g->value_len = strlen(g_str);
   g->value = clone_str(g_str, g->value_len);
   char *g_str_ptr = g_str;
+  non_term * line_non_term;
   
   char buff[BUFFSIZE];
   uint32_t buff_i = 0;
@@ -334,7 +419,8 @@ gram * parse_grammar( char * g_str )
     if ( (*g_str_ptr) == '\n')
     {
       buff[buff_i] = '\0';
-      g->name = parse_grammar_line( buff, buff_i, &( g->nterms) ); 
+      line_non_term = parse_grammar_line( buff, buff_i, &( g->nterms) ); 
+      g->name = line_non_term->name; 
       // parse line
       //TODO: make this part of the code update the grammar list, don't do it in it's own function.
       //      much more efficient this way and then the offspring will be legitimate
@@ -474,11 +560,14 @@ void populate_grammar_accept(gram * g)
   }
 }
 
+
+
 int main() 
 {
-  char * grammar = "verb=are,is,were,was,will be,\n" \
-                   "noun=person,place,thing,\n" \
-                   "accept={noun}{verb}\n";
+  char * grammar = "being_verb=are`is`were`was`will be`\n" \
+                   "noun=person`place`thing`\n" \
+                   "punctuation=!`?`.`,`;`\n" \
+                   "accept={noun}{being_verb}{punctuation}\n";
   gram * g = parse_grammar( grammar );
   populate_grammar_accept(g);
   debug_grammar(g);
